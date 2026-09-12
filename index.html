@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 18:05 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 19:37 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -616,15 +616,16 @@ table.data tr.assumed td { background: #fffbeb; }
 
   <!-- Novice stepper: guides the first case; each dot fills as the step is
        done. Numbers match the numbered cards below (1 Drug & patient, 2
-       Dosing schedule & measured concentrations, 3 Forecast) — card 4
-       (Regimen explorer) is a downstream tool used after a forecast exists,
-       so it has no onboarding step of its own. Also moved inside
-       main.layout for the same width-matching reason as the restore bar
-       above. -->
+       Dosing schedule & measured concentrations, 3 Forecast, 4 Regimen
+       explorer) — step 4 becomes reachable once a forecast exists, since
+       the explorer reuses that fit's own fitted parameters. Also moved
+       inside main.layout for the same width-matching reason as the
+       restore bar above. -->
   <div class="stepper no-print" id="stepper">
     <span class="step" data-step="wt"><i>1</i> Enter weight</span>
     <span class="step" data-step="dose"><i>2</i> Add doses &amp; samples</span>
     <span class="step" data-step="run"><i>3</i> Run forecast</span>
+    <span class="step" data-step="explore"><i>4</i> Explore regimen (optional)</span>
     <button class="linklike" id="stepperDismiss" title="Hide this guide">dismiss</button>
   </div>
 
@@ -892,7 +893,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.18.0';
+  ECU.VERSION = '0.19.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2768,12 +2769,29 @@ table.data tr.assumed td { background: #fffbeb; }
    * same interval, then progressively longer ones (interval prolongation is
    * the usual direction for these drugs), plus one shorter for context. Whole
    * days, deduplicated. */
+  /* v0.19.0 — every candidate is a whole number of WEEKS, not just a whole
+   * number of days. An interval like "every 13 days" or "every 6 days" is
+   * arithmetically fine but clinically undoable: it drifts across weekdays
+   * every cycle (a Monday appointment becomes Sunday, then Saturday, ...),
+   * and every real regimen for these agents is in fact quoted in weeks
+   * (q2w, q4w, q8w...), never in an odd number of days. Candidates are built
+   * directly from a spread of WEEK offsets around the current interval
+   * (rounded to the nearest week first) rather than fractional multipliers
+   * snapped afterwards — snapping fractional multipliers post-hoc collapsed
+   * several of them onto the same week for a short baseline (e.g. 0.75x and
+   * 1x of 14 days both round to 2 weeks), losing candidates exactly where
+   * interval prolongation — this app's primary use case — most needs them.
+   * The spread favours longer candidates (prolongation) with one shorter
+   * week kept for context, matching the direction already used elsewhere
+   * in the regimen explorer. */
   function candidateIntervals(current) {
     var cur = current > 0 ? current : 14;
-    var mult = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+    var curWeeks = Math.max(1, Math.round(cur / 7));
+    var weekOffsets = [-1, 0, 1, 2, 3, 4, 6, 8];
     var seen = {}, out = [];
-    mult.forEach(function (m) {
-      var v = Math.max(1, Math.round(cur * m));
+    weekOffsets.forEach(function (dw) {
+      var wk = Math.max(1, curWeeks + dw);
+      var v = wk * 7;
       if (!seen[v]) { seen[v] = 1; out.push(v); }
     });
     return out.sort(function (a, b) { return a - b; });
@@ -3752,6 +3770,13 @@ table.data tr.assumed td { background: #fffbeb; }
    * "Add samples" used to be its own numbered step 3, but samples are
    * optional and live in card 2 alongside doses, so a separate number there
    * disagreed with the card it actually belonged to. Merged into one step. */
+  /* v0.19.0: step 4 ("Explore regimen") re-added, matching card 4 — it was
+   * deliberately left out in v0.16.0 on the reasoning that the explorer is a
+   * downstream, optional tool with no onboarding step of its own; feedback
+   * was that the stepper's count should still reach 4, matching the card it
+   * corresponds to, with the step simply becoming reachable once a forecast
+   * exists (mirroring how "Run forecast" itself only becomes active once
+   * weight and doses are entered). */
   function updateStepper() {
     if (typeof document === 'undefined') return;
     var el = $('stepper');
@@ -3759,6 +3784,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var wtDone = state.patient.wt >= 35 && state.patient.wt <= 200;
     var doseDone = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var runDone = !!state.fit && !state.stale;
+    var exploreDone = !!(state.fit && state.fit.intervalScan);
     function set(step, done, active) {
       var s = el.querySelector('[data-step="' + step + '"]');
       if (!s) return;
@@ -3768,6 +3794,7 @@ table.data tr.assumed td { background: #fffbeb; }
     set('wt', wtDone, true);
     set('dose', doseDone, wtDone);
     set('run', runDone, wtDone && doseDone);
+    set('explore', exploreDone, runDone);
   }
 
   /* P4: non-blocking toast with Undo (replaces the native confirm()). */
@@ -5067,6 +5094,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       state.fit.intervalScan = { mode: vary, amt: amt, interval: iv, baseline: baseline, rows: scan };
       renderIntervalScan();
+      updateStepper();
     } catch (e) {
       $('iv-out').innerHTML = noteHtml('Could not evaluate the regimen: ' + esc(e.message), 'warn');
     } finally {
