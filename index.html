@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 19:37 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 21:09 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -136,6 +136,9 @@ button.primary:hover { background: var(--accent-dark); }
 button.small { padding: 3px 9px; font-size: 12px; font-weight: 500; }
 button.linklike { background: none; border: none; color: var(--accent); text-decoration: underline; padding: 0; font-weight: 500; }
 button:disabled { opacity: .5; cursor: default; }
+/* A disabled advanced-fitting select must read as deliberately unavailable
+   rather than broken; the hint line beside it says why (v0.20.0). */
+select:disabled { opacity: .55; cursor: not-allowed; background: #f1f5f9; }
 .actions-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 /* tables */
@@ -740,6 +743,26 @@ table.data tr.assumed td { background: #fffbeb; }
         </div>
       </div>
     </form>
+    <details class="help no-print" id="assayOptions">
+      <summary>Assay settings (LLOQ, error multiplier)</summary>
+      <div class="row2">
+        <div>
+          <div class="lbl-help">
+            <label class="f" for="pt-lloq">LLOQ (µg/mL, optional)</label>
+            <button type="button" class="info" data-help="lloq" aria-label="What is the LLOQ?" aria-expanded="false" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">ⓘ</button>
+          </div>
+          <input type="number" id="pt-lloq" min="1" max="100" step="1" placeholder="e.g. 10" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">
+        </div>
+        <div>
+          <div class="lbl-help">
+            <label class="f" for="pt-errmult">Assay error multiplier</label>
+            <button type="button" class="info" data-help="errmult" aria-label="What does the assay error multiplier do?" aria-expanded="false" title="Scales the model's residual error to your local assay; 1 = model as published">ⓘ</button>
+          </div>
+          <input type="number" id="pt-errmult" min="0.1" max="10" step="0.1" value="1" title="Scales the model's residual error to your local assay; 1 = model as published">
+          <div class="legend-note">Default 1 — leave unchanged unless your lab advises otherwise.</div>
+        </div>
+      </div>
+    </details>
   </div>
 
   <!-- ============ 3 · FORECAST & RESULTS ============ -->
@@ -766,23 +789,19 @@ table.data tr.assumed td { background: #fffbeb; }
     </div>
     <div class="run-hint" id="runHint"></div>
     <details class="help advanced no-print" id="advancedForecast">
-      <summary>Advanced options (assay)</summary>
-      <div class="row2">
-        <div>
-          <div class="lbl-help">
-            <label class="f" for="pt-lloq">LLOQ (µg/mL, optional)</label>
-            <button type="button" class="info" data-help="lloq" aria-label="What is the LLOQ?" aria-expanded="false" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">ⓘ</button>
-          </div>
-          <input type="number" id="pt-lloq" min="1" max="100" step="1" placeholder="e.g. 10" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">
+      <summary>Advanced fitting options</summary>
+      <div>
+        <div class="lbl-help">
+          <label class="f" for="pt-recency">Weight of older samples</label>
+          <button type="button" class="info" data-help="recency" aria-label="What does weighting of older samples do?" aria-expanded="false" title="Optional: give older measurements a larger residual error, so they influence the individual fit less than recent ones. Off by default.">ⓘ</button>
         </div>
-        <div>
-          <div class="lbl-help">
-            <label class="f" for="pt-errmult">Assay error multiplier</label>
-            <button type="button" class="info" data-help="errmult" aria-label="What does the assay error multiplier do?" aria-expanded="false" title="Scales the model's residual error to your local assay; 1 = model as published">ⓘ</button>
-          </div>
-          <input type="number" id="pt-errmult" min="0.1" max="10" step="0.1" value="1" title="Scales the model's residual error to your local assay; 1 = model as published">
-          <div class="legend-note">Default 1 — leave unchanged unless your lab advises otherwise.</div>
-        </div>
+        <select id="pt-recency" title="Optional: give older measurements a larger residual error, so they influence the individual fit less than recent ones. Off by default.">
+          <option value="off">Off — all samples weighted equally</option>
+          <option value="low">Low — slow decay (τ = 1095 days)</option>
+          <option value="medium">Medium — τ = 365 days</option>
+          <option value="high">High — fast decay (τ = 122 days)</option>
+        </select>
+        <div class="legend-note" id="recencyHint"></div>
       </div>
     </details>
     <details class="help no-print" id="howto">
@@ -893,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.19.0';
+  ECU.VERSION = '0.20.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1145,18 +1164,31 @@ table.data tr.assumed td { background: #fffbeb; }
    * fields {cl,v1,cov} are the CL/V1 sub-block for backward-compat callers
    * (tests that unpack .cl/.cov).
    * eculizumab/aHUS: IOV folded into CL, see above. */
+  /* Between-occasion variance on clearance for this drug + disease, or 0 when
+   * the model does not estimate one (everything except eculizumab/aHUS).
+   *
+   * Single source of the "does this model have IOV here?" predicate: priorOmega
+   * below folds it into the CL prior, and bayes.js uses the same number as the
+   * ceiling for time-dependent recency weighting (v0.20.0). Two hand-written
+   * copies of `IOV_CL > 0 && IOV_DISEASES.indexOf(disease) >= 0` would drift
+   * the first time another drug gains an IOV term. */
+  function iovVar(disease, id) {
+    var s = specOf(id);
+    return (s.IOV_CL > 0 && s.IOV_DISEASES.indexOf(disease) >= 0) ? s.IOV_CL : 0;
+  }
+
   function priorOmega(disease, id) {
     var s = specOf(id);
     var eta = s.ETA || s.OMEGA_AUX || null;
+    var fold = iovVar(disease, id);
     var dims, vars;
     if (s.ETA) {
       dims = s.ETA.vars.length;
       vars = s.ETA.vars.slice();
-      if (s.IOV_CL > 0 && s.IOV_DISEASES.indexOf(disease) >= 0) vars[0] += s.IOV_CL;
+      vars[0] += fold;
     } else {
       dims = 2;
-      var fold = s.IOV_CL > 0 && s.IOV_DISEASES.indexOf(disease) >= 0;
-      vars = [s.OMEGA.CL + (fold ? s.IOV_CL : 0), s.OMEGA.V1];
+      vars = [s.OMEGA.CL + fold, s.OMEGA.V1];
     }
     return {
       cl: vars[0], v1: vars[1], cov: (s.OMEGA && s.OMEGA.COV) || 0,
@@ -1494,6 +1526,7 @@ table.data tr.assumed td { background: #fffbeb; }
     drug: drug,
     spec: specOf,
     priorOmega: priorOmega,
+    iovVar: iovVar,
     etaDim: etaDim,
     omegaVars: omegaVars,
     indivParams: indivParams,
@@ -1624,8 +1657,40 @@ table.data tr.assumed td { background: #fffbeb; }
     return (b * e0 * e0 - 2 * c * e0 * e1 + a * e1 * e1) / det;
   }
 
+  /* Time-dependent recency weighting (v0.20.0) -----------------------------
+   *
+   * An optional, off-by-default advanced fitting option: older concentrations
+   * get an inflated PROPORTIONAL residual error, so they pull the individual
+   * fit less than recent ones. Rationale: between-occasion variability means a
+   * sample drawn several occasions ago reflects a clearance realisation that
+   * has partly decorrelated from the patient's current one, so part of its
+   * apparent misfit is drift rather than measurement error.
+   *
+   * The extra variance is  omega2_IOV * (1 - exp(-age/tau)) * pred^2, i.e. it
+   * starts at exactly zero for the newest sample and SATURATES at the drug's
+   * own published between-occasion variance — an old sample is discounted, but
+   * never discarded. The ceiling therefore comes from the model, not from a
+   * chosen constant; only tau (how fast the discount is reached) is a setting.
+   *
+   * tau presets, in days. LOW = weak discounting = slow decay = LONG tau.
+   * Spacing is x3 with round clinical units (3 years / 1 year / 4 months);
+   * at 3 months these add roughly 12% / 16% / 24% CV on top of the assay
+   * error. Note the direction: the source model's IOV is exchangeable between
+   * occasions, so a SHORT tau is the reading closest to the publication and
+   * every tau > 0 asserts more persistence than the paper itself contains.
+   *
+   * tau is never estimated from the patient's own data (N is typically 1-4;
+   * it is unidentifiable there, and a free inflation parameter would simply be
+   * driven up until the residuals vanished). It is a deterministic function of
+   * each sample's age, so the log-variance term below stays constant in eta. */
+  var RECENCY_TAU = { off: 0, low: 1095, medium: 365, high: 122 };
+  function recencyTau(preset) {
+    var v = RECENCY_TAU[preset];
+    return typeof v === 'number' && isFinite(v) && v > 0 ? v : 0;
+  }
+
   /* ctx: { wt, age?, disease, drug?, doses, obs:[{t,c,lloq}], lloq,
-   *        omega:{cl,v1,cov}, rtol?, errMult? }
+   *        omega:{cl,v1,cov}, rtol?, errMult?, recency? }
    * Returns ofv(eta) = -2 log[p(D|eta) p(eta)] up to a constant.
    *
    * Likelihood terms (exact Gaussian, v0.7.0):
@@ -1644,6 +1709,19 @@ table.data tr.assumed td { background: #fffbeb; }
     var errMult = ctx.errMult != null && ctx.errMult > 0 ? ctx.errMult : 1;
     var mult2 = errMult * errMult;
     var dims = (ctx.omega && ctx.omega.dims) || 2;
+    /* Per-observation recency inflation, precomputed: it depends only on each
+     * sample's AGE, never on eta, so it is constant across the whole search.
+     * Age is measured from the newest fitted sample (obs is sorted above), not
+     * from the wall clock: a session must refit to the same numbers tomorrow,
+     * and a report must be reproducible from its own JSON export. Zero when
+     * the option is off, and zero for every drug/disease whose model has no
+     * between-occasion term (everything except eculizumab/aHUS). */
+    var recTau = recencyTau(ctx.recency);
+    var iovVar = recTau > 0 ? M.iovVar(ctx.disease, ctx.drug) : 0;
+    var tNewest = times.length ? times[times.length - 1] : 0;
+    var ageInfl = obs.map(function (o) {
+      return iovVar > 0 ? iovVar * (1 - Math.exp(-(tNewest - o.t) / recTau)) : 0;
+    });
     function ofv(eta) {
       var etaVec = eta;
       var p = M.indivParams(ctx.wt, ctx.disease, etaVec, ctx.drug, ctx.age);
@@ -1652,8 +1730,11 @@ table.data tr.assumed td { background: #fffbeb; }
       var s = omegaQuadVec(ctx.omega, etaVec);
       for (var i = 0; i < obs.length; i++) {
         var o = obs[i], pred = sim.c[i];
-        // variance floor guards the MAP against a degenerate sd -> 0 when pred ~ 0
-        var v = Math.max(sig.ADD + sig.PROP * pred * pred, 1e-6) * mult2;
+        /* variance floor guards the MAP against a degenerate sd -> 0 when
+         * pred ~ 0. The recency term is added AFTER the floor and OUTSIDE
+         * errMult^2: the floor protects the assay term it was written for, and
+         * errMult rescales assay error, which occasion drift is not. */
+        var v = Math.max(sig.ADD + sig.PROP * pred * pred, 1e-6) * mult2 + ageInfl[i] * pred * pred;
         var sd = Math.sqrt(v);
         if (o.lloq && lloq > 0) {
           var lp = logPhi((lloq - pred) / sd);
@@ -2427,7 +2508,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var etaInformation = null, etaCorr = null;
     var rhat = null, nChains = 0;
     if (obsFit.length) {
-      var ctx = { wt: input.wt, age: age, disease: disease, drug: drug, doses: doses, obs: obsFit, lloq: input.lloq || 0, omega: omega, rtol: 1e-6, errMult: input.errMult };
+      var ctx = { wt: input.wt, age: age, disease: disease, drug: drug, doses: doses, obs: obsFit, lloq: input.lloq || 0, omega: omega, rtol: 1e-6, errMult: input.errMult, recency: input.recency };
       var ofv = makeOfv(ctx);
       prog(0.22, 'MAP estimation…');
       await tick();
@@ -2573,6 +2654,36 @@ table.data tr.assumed td { background: #fffbeb; }
         return quantileSorted(vals, 0.5);
       });
     }
+    /* Per-observation recency bookkeeping (v0.20.0). The preset curve is not
+     * auditable on its own — what a reader needs is how much each ACTUAL
+     * sample was discounted, so compute the realised relative weight
+     *   w_i = v_base / (v_base + inflation * ipred^2)
+     * at that sample's own individual prediction. w = 1 means untouched.
+     * Age is measured from the newest FITTED sample, the same reference
+     * makeOfv uses, so the two can never disagree. */
+    var recTauUsed = recencyTau(input.recency);
+    var recVarUsed = recTauUsed > 0 ? M.iovVar(disease, drug) : 0;
+    var recSig = M.spec(drug).SIGMA;
+    var recMult2 = (input.errMult != null && input.errMult > 0 ? input.errMult : 1);
+    recMult2 = recMult2 * recMult2;
+    /* Seed from the first fitted observation, NOT from 0: in steady-state mode
+     * the relative-time origin is the LATEST DOSE, so every sample taken before
+     * it has a negative time. Seeding at 0 made the newest sample look 0.4 days
+     * old instead of 0, and reported a discount on a sample the fit had (rightly)
+     * left alone. makeOfv is unaffected — it takes the true max of the sorted
+     * times — so this was a disclosure bug, not a fitting one. */
+    var recNewest = obsFit.length ? obsFit[0].t : 0;
+    for (var rn = 1; rn < obsFit.length; rn++) if (obsFit[rn].t > recNewest) recNewest = obsFit[rn].t;
+    function recencyOf(o, ipred) {
+      var ageD = recNewest - o.t;
+      if (ageD < 0) ageD = 0;
+      if (!(recVarUsed > 0)) return { ageDays: ageD, inflation: 0, weight: 1 };
+      var infl = recVarUsed * (1 - Math.exp(-ageD / recTauUsed));
+      if (!isFinite(ipred)) return { ageDays: ageD, inflation: infl, weight: NaN };
+      var vBase = Math.max(recSig.ADD + recSig.PROP * ipred * ipred, 1e-6) * recMult2;
+      return { ageDays: ageD, inflation: infl, weight: vBase / (vBase + infl * ipred * ipred) };
+    }
+
     var popTyp = null;
     try { popTyp = M.indivParams(input.wt, disease, new Array(omega.dims).fill(0), drug, age); } catch (e) { popTyp = null; }
     var clDraws = [], v1Draws = [];
@@ -2616,6 +2727,11 @@ table.data tr.assumed td { background: #fffbeb; }
       etaDim: omega.dims,
       covFallback: covInfo ? covInfo.fallback : false,
       errMult: input.errMult != null && input.errMult > 0 ? input.errMult : 1,
+      /* echo the recency setting back so the UI, the report and a saved
+       * session all describe the fit that was actually run */
+      recency: recencyTau(input.recency) > 0 ? input.recency : 'off',
+      recencyTau: recencyTau(input.recency),
+      recencyVar: recencyTau(input.recency) > 0 ? M.iovVar(disease, drug) : 0,
       draws: draws,
       interval: interval,
       horizon: horizon,
@@ -2634,8 +2750,10 @@ table.data tr.assumed td { background: #fffbeb; }
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
       /* v0.10.0 diagnostics exports */
       obsData: obs.map(function (o, i) {
+        var ip = ipredAtObs ? ipredAtObs[i] : NaN;
+        var rw = recencyOf(o, ip);
         return { t: o.t, c: o.c, lloq: o.lloq, exclude: o.exclude, note: o.note,
-                 ipred: ipredAtObs ? ipredAtObs[i] : NaN };
+                 ipred: ip, ageDays: rw.ageDays, recencyWeight: rw.weight };
       }),
       nExcluded: obs.length - obsFit.length,
       popTypical: popTyp,
@@ -2871,6 +2989,7 @@ table.data tr.assumed td { background: #fffbeb; }
     mulberry32: mulberry32,
     gaussFactory: gaussFactory,
     makeOfv: makeOfv,
+    recencyTau: recencyTau,
     mapEstimate: mapEstimate,
     laplaceCov: laplaceCov,
     runMCMC: runMCMC,
@@ -3522,6 +3641,7 @@ table.data tr.assumed td { background: #fffbeb; }
     target: { value: null },
     lloq: null,
     errMult: 1,
+    recency: 'off',   // advanced fitting option; see B.recencyTau()
     doses: [],   // {t: ms, amt: mg, route?: 'iv'|'sc'}
     obs: [],     // {t: ms, c: ug/mL, lloq: bool}
     fit: null,   // bayes result + .rel
@@ -3547,7 +3667,7 @@ table.data tr.assumed td { background: #fffbeb; }
       localStorage.setItem(LS_KEY, JSON.stringify({
         v: ECU.VERSION, savedAt: Date.now(),
         patient: state.patient, drug: state.drug, target: state.target,
-        lloq: state.lloq, errMult: state.errMult,
+        lloq: state.lloq, errMult: state.errMult, recency: state.recency,
         doses: state.doses, obs: state.obs, report: state.report
       }));
     } catch (e) { /* quota or serialisation failure must never break the app */ }
@@ -3664,7 +3784,8 @@ table.data tr.assumed td { background: #fffbeb; }
     target: 'The lowest trough you want to keep. The table shows P(> target) — the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
     lloq: 'Lowest concentration your lab can measure reliably (see the lab report, e.g. 10 \u00b5g/mL). Samples below this are still useful — tick \u201c< LLOQ\u201d when you add them.',
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
-    errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes — the forecast then leans more on typical patients.'
+    errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes — the forecast then leans more on typical patients.',
+    recency: 'Optional, off by default. A patient\u2019s clearance drifts between occasions, so a sample from months ago describes them slightly less well than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 the newest sample is never discounted, and the oldest is never discarded. Low decays slowly, high decays fast. Only available where the model actually estimates between-occasion variability (eculizumab in aHUS).'
   };
 
   /* P-badge click popover: the badge's own (dynamic) title, incl. the
@@ -3841,6 +3962,8 @@ table.data tr.assumed td { background: #fffbeb; }
     state.lloq = ll === '' ? null : parseFloat(ll);
     var em = parseFloat($('pt-errmult') && $('pt-errmult').value);
     state.errMult = isFinite(em) && em >= 0.1 && em <= 10 ? em : 1;
+    var rc = $('pt-recency');
+    state.recency = rc && RECENCY_PRESETS.indexOf(rc.value) >= 0 ? rc.value : 'off';
   }
 
   /* Refresh the per-drug parts of the UI (dose field conventions, steady-state
@@ -3896,6 +4019,10 @@ table.data tr.assumed td { background: #fffbeb; }
       dSel.addEventListener('change', function () {
         readPatient();
         if (hintEl) hintEl.textContent = drugHintText();
+        // eculizumab PNH <-> aHUS is the only route by which the disease
+        // changes without applyDrugUI() running, and it is exactly the switch
+        // that turns the recency option on and off.
+        syncRecencyAvailability();
       });
     }
     var ar = $('ageRow');
@@ -3928,6 +4055,7 @@ table.data tr.assumed td { background: #fffbeb; }
     // runFit falls back to the drug default when left blank)
     var th = $('targetHint');
     if (th) th.textContent = spec.targetHint || '';
+    syncRecencyAvailability();
   }
 
   function targetLabel() {
@@ -3937,6 +4065,41 @@ table.data tr.assumed td { background: #fffbeb; }
   /* The trough target lives in a collapsed <details> so it cannot be changed by
    * accident; its summary always shows the value the forecast and the plot
    * actually use (the drug default until the user opens it and edits). */
+  /* Advanced fitting option: time-dependent recency weighting (v0.20.0).
+   * The magnitude of the discount is the drug's own published between-occasion
+   * clearance variance, so the option is only meaningful where the model
+   * estimates one — eculizumab in aHUS, and nothing else. recencyApplies()
+   * deliberately asks the MODEL (M.iovVar), which is the same predicate
+   * M.priorOmega uses to fold IOV into the prior, rather than re-testing the
+   * drug and disease by hand: two copies would drift the first time another
+   * drug gains an IOV term. */
+  var RECENCY_PRESETS = ['off', 'low', 'medium', 'high'];
+
+  function recencyApplies() {
+    return M.iovVar(state.patient.disease, state.drug) > 0;
+  }
+
+  function syncRecencyAvailability() {
+    var sel = $('pt-recency');
+    if (!sel) return;
+    var ok = recencyApplies();
+    sel.disabled = !ok;
+    if (!ok && state.recency !== 'off') state.recency = 'off';
+    if (!ok) sel.value = 'off';
+    var hint = $('recencyHint');
+    if (!hint) return;
+    if (!ok) {
+      hint.textContent = 'Not available for ' + M.drug().label +
+        (M.drug().diseaseCovariate ? ' in ' + state.patient.disease : '') +
+        ': this model estimates no between-occasion variability in clearance, so there is no published amount by which to discount an older sample.';
+      return;
+    }
+    var tau = B.recencyTau(state.recency);
+    hint.textContent = tau > 0
+      ? 'Older samples carry a larger residual error (τ = ' + tau + ' days), so they influence the fit less than recent ones. The newest sample is never discounted; the oldest is never discarded.'
+      : 'All measurements are weighted equally, whatever their date. This is the published model and the default.';
+  }
+
   function updateTargetFold() {
     var el = $('targetFoldVal');
     if (!el) return;
@@ -4129,6 +4292,7 @@ table.data tr.assumed td { background: #fffbeb; }
         obs: rel.obsRel,
         lloq: state.lloq || 0,
         errMult: state.errMult || 1,
+        recency: state.recency || 'off',
         target: state.target.value,
         windowStart: rel.windowStart,
         seed: SEED
@@ -4439,6 +4603,17 @@ table.data tr.assumed td { background: #fffbeb; }
     if (state.lloq > 0) {
       ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
     }
+    /* Recency weighting changes what the fit is based on, so it must never be
+     * silent: say which samples were discounted and by how much. */
+    if (fit.recencyTau > 0) {
+      var disc = (fit.obsData || []).filter(function (o) { return !o.exclude && o.recencyWeight < 0.995; });
+      ad.push(noteHtml('Older samples down-weighted (τ = ' + fit.recencyTau + ' days): ' +
+        (disc.length ? disc.length + ' of ' + (fit.obsData || []).length + ' measurement' +
+          ((fit.obsData || []).length > 1 ? 's' : '') + ' carry a larger residual error, the oldest at ' +
+          Math.round(100 * Math.min.apply(null, disc.map(function (o) { return o.recencyWeight; }))) +
+          '% of its normal weight'
+          : 'no sample is old enough to be affected') + '.', 'info'));
+    }
     /* v0.13.0 diagnostics that must not stay silent: an excluded sample changes
      * what the fit is based on, and a non-converged optimiser or unmixed chain
      * means the individual estimate itself may be wrong. */
@@ -4654,6 +4829,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var data = {
       app: 'mab-tdm', version: VERSION, savedAt: new Date().toISOString(),
       patient: state.patient, drug: state.drug, target: state.target, lloq: state.lloq, errMult: state.errMult,
+      recency: state.recency,
       report: { preparedBy: state.report.preparedBy, advice: state.report.advice },
       mode: currentMode(),
       ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString() } : null,
@@ -4685,6 +4861,7 @@ table.data tr.assumed td { background: #fffbeb; }
         if (!(state.target.value > 0)) state.target.value = null;
         state.lloq = data.lloq != null ? data.lloq : null;
         state.errMult = data.errMult != null && data.errMult >= 0.1 && data.errMult <= 10 ? data.errMult : 1;
+        state.recency = RECENCY_PRESETS.indexOf(data.recency) >= 0 ? data.recency : 'off';
         state.report = {
           preparedBy: data.report && typeof data.report.preparedBy === 'string' ? data.report.preparedBy : '',
           advice: data.report && typeof data.report.advice === 'string' ? data.report.advice : ''
@@ -4721,6 +4898,8 @@ table.data tr.assumed td { background: #fffbeb; }
     updateTargetFold();
     $('pt-lloq').value = state.lloq || '';
     if ($('pt-errmult')) $('pt-errmult').value = state.errMult || 1;
+    if ($('pt-recency')) $('pt-recency').value = state.recency || 'off';
+    syncRecencyAvailability();
   }
 
   // ------------------------------ init ------------------------------------
@@ -4733,6 +4912,18 @@ table.data tr.assumed td { background: #fffbeb; }
         if (id === 'pt-lloq') readPatient();
         markStale();
       });
+    });
+    /* The recency preset is a <select>: listen on 'change' (the codebase
+     * distrusts 'input' for selects — pt-disease has its own change handler
+     * for the same reason). markStale() is not optional here: it is the
+     * sole autosave point AND the stale banner, so omitting it would both
+     * lose the setting and leave a stale forecast looking current. */
+    var recSel = $('pt-recency');
+    if (recSel) recSel.addEventListener('change', function () {
+      readPatient();
+      // the hint line quotes the chosen tau, so it is stale until refreshed
+      syncRecencyAvailability();
+      markStale();
     });
     $('btnRun').addEventListener('click', runFit);
 
@@ -4842,14 +5033,15 @@ table.data tr.assumed td { background: #fffbeb; }
       if (!below && !(c >= 0)) { alert('Enter a valid concentration.'); return; }
       if (below && cRaw !== '' && !(c >= 0)) { alert('Enter a valid concentration, or leave the field empty for a below-LLOQ sample.'); return; }
       if (below && !(state.lloq > 0)) {
-        /* The LLOQ lives in the collapsed "Advanced options (assay)" fold in the
-         * Forecast card, not the patient card — the old message sent the user to
-         * the wrong place. Open the fold and focus the field instead. */
-        var advEl = $('advancedForecast');
+        /* The LLOQ lives in the collapsed "Assay settings" fold, directly below
+         * the measurements table — one card away from this checkbox rather
+         * than two, since v0.20.0 moved the assay controls out of the Forecast
+         * card. Open that fold and focus the field instead of just refusing. */
+        var advEl = $('assayOptions');
         if (advEl) { advEl.open = true; }
         var lq = $('pt-lloq');
         if (lq) { lq.focus(); }
-        alert('A below-LLOQ sample needs the assay LLOQ. It is under “Advanced options (assay)” in the Forecast card — now opened for you.');
+        alert('A below-LLOQ sample needs the assay LLOQ. It is under “Assay settings”, just below the measurements — now opened for you.');
         return;
       }
       var maxC = (M.drug().obsValMax || 2000);
@@ -4981,17 +5173,28 @@ table.data tr.assumed td { background: #fffbeb; }
   function applySession(s) {
     state.patient = s.patient || state.patient;
     state.drug = M.drugs[s.drug] ? s.drug : state.drug;
-    state.target = s.target || { value: null };
     state.lloq = s.lloq != null ? s.lloq : null;
     state.errMult = s.errMult || 1;
+    /* absent in sessions saved before v0.20.0 — default, never undefined */
+    state.recency = RECENCY_PRESETS.indexOf(s.recency) >= 0 ? s.recency : 'off';
     state.doses = (s.doses || []).slice();
     state.obs = (s.obs || []).slice();
     state.report = s.report || { preparedBy: '', advice: '' };
     state.fit = null;
     M.select(state.drug);
     var sel = $('pt-drug'); if (sel) sel.value = state.drug;
-    syncInputs();
+    /* Order matters, and must match importJson()'s: applyDrugUI() lays down
+     * the drug-scoped defaults — including resetting the trough target to
+     * spec.targetDefault, which the drug-switch path depends on — so the
+     * session's own values have to be applied AFTER it, not before. Restoring
+     * state.target first (as this did until v0.19.1) let applyDrugUI() quietly
+     * overwrite a clinician-entered target with the drug default on every
+     * autosave restore, while the JSON-import path, which already had this
+     * order, kept it. */
     applyDrugUI();
+    state.target = s.target || { value: null };
+    if (!(state.target.value > 0)) state.target.value = null;
+    syncInputs();
     renderDoses();
     renderObs();
     showEmpty();
@@ -5239,7 +5442,33 @@ table.data tr.assumed td { background: #fffbeb; }
       'the <i>next</i> dose — a future occasion — its interval is therefore somewhat narrower than the full ' +
       'occasion-to-occasion predictive uncertainty. Re-sample around flares, regimen changes and any event ' +
       'that could shift clearance, rather than relying on a forecast projected far ahead.</p>' +
-      '<p>PNH (eculizumab), ravulizumab and crovalimab have no IOV term in their source models, so nothing is folded in for them.</p>';
+      '<p>PNH (eculizumab), ravulizumab and crovalimab have no IOV term in their source models, so nothing is folded in for them.</p>' +
+      '<h3>Weighting of older samples (optional, off by default)</h3>' +
+      '<p>Under <b>Advanced fitting options</b> the same occasion variance can also be used to discount ' +
+      '<i>older</i> measurements. Because a patient\'s clearance drifts between occasions, part of the ' +
+      'apparent misfit of a months-old sample is drift rather than measurement error. Switched on, each ' +
+      'sample\'s proportional residual error is inflated by ' +
+      'IOV<sub>CL</sub> × (1 − e<sup>−age/τ</sup>), where age is measured from the newest sample. The ' +
+      'newest sample is therefore never discounted, and because the term saturates at the drug\'s own ' +
+      'published occasion variance, an old sample is <b>down-weighted but never discarded</b>. The presets ' +
+      'set τ only: low 1095 days, medium 365 days, high 122 days. τ is not taken from any publication and ' +
+      'is never estimated from the patient\'s own data — with the handful of samples a real case carries it ' +
+      'would not be identifiable, and a free inflation parameter would simply be driven up until the ' +
+      'residuals vanished.</p>' +
+      '<p><b>Limitations, stated plainly.</b> The source model treats occasions as exchangeable — it ' +
+      'contains no timescale at all — so any τ &gt; 0 asserts more persistence than the publication itself ' +
+      'supports; the presets are a clinical judgement, not a fitted quantity. The discount is applied as ' +
+      'residual error while the occasion variance remains folded into the clearance prior, so the reported ' +
+      'credible intervals are, if anything, somewhat narrower than a full occasion-level treatment would ' +
+      'give — the caveat above about a future-occasion trough applies with more force when this option is ' +
+      'on, not less. Two samples drawn on the same past occasion are treated as independent, which ' +
+      'over-weights them slightly. The inflation is applied to the whole residual, so it also discounts ' +
+      'what an old sample said about volume, which does not drift between occasions. It is available only ' +
+      'for eculizumab in aHUS, the one drug and disease whose source model estimates an occasion variance; ' +
+      'borrowing that number for the others would be an extrapolation the app does not make. Finally, age ' +
+      'is not the same thing as relevance: a sample is often old because the patient was stable, and a ' +
+      'recent one drawn <i>because</i> something changed. To set aside a sample you believe is ' +
+      'unrepresentative, exclude it explicitly rather than relying on its date.</p>';
     M.listDrugs().forEach(function (d) {
       var s = M.spec(d.id);
       h += '<div class="about-model"><b>' + esc(s.label) + '</b>' +
@@ -5437,6 +5666,8 @@ table.data tr.assumed td { background: #fffbeb; }
       (spec.targetSource ? '<br><span class="rp-src">' + esc(spec.targetSource) + '</span>' : '') + '</td></tr>';
     if (st.lloq > 0) h += '<tr><td>Assay LLOQ</td><td>' + st.lloq + ' µg/mL (samples &lt; LLOQ handled with the M3 method)</td></tr>';
     if ((st.errMult || 1) !== 1) h += '<tr><td>Assay error multiplier</td><td>' + st.errMult + '</td></tr>';
+    if (fit && fit.recencyTau > 0) h += '<tr><td>Weighting of older samples</td><td>' +
+      esc(fit.recency) + ' (τ = ' + fit.recencyTau + ' days)</td></tr>';
     h += '</table>';
 
     h += '<h3 class="rp-h">Dosing schedule' + (rel.ssMode ? ' (steady state: ' + rel.dosesRel.filter(function (d) { return d.amt; }).length + ' doses at ' + fmtC(rel.dosesRel[0].amt) + ' mg q' + (rel.dosesRel[1] ? fmtC(rel.dosesRel[1].t - rel.dosesRel[0].t) : '?') + 'd)' : '') + '</h3>';
@@ -5508,6 +5739,19 @@ table.data tr.assumed td { background: #fffbeb; }
     h += '<tr><td>Residual error model</td><td>' +
       (spec.SIGMA.ADD > 0 ? 'additive ' + spec.SIGMA.ADD + ' + ' : '') + 'proportional ' + spec.SIGMA.PROP +
       ((st.errMult || 1) !== 1 ? ' (scaled ×' + st.errMult + ')' : '') + '</td></tr>';
+    /* The preset name alone is not auditable — a reader needs to see how much
+     * each ACTUAL sample was discounted, at its own individual prediction. */
+    if (fit && fit.recencyTau > 0) {
+      var rws = (fit.obsData || []).map(function (o) {
+        return fmtDate(rel.t0ms + o.t * DAY) + ' — ' + Math.round(o.ageDays) + ' d older than the newest sample, ' +
+          'weight ' + Math.round(100 * o.recencyWeight) + '%' + (o.exclude ? ' (excluded from the fit)' : '');
+      });
+      h += '<tr><td>Older-sample weighting</td><td>' + esc(fit.recency) + ', τ = ' + fit.recencyTau +
+        ' days. Each measurement\'s proportional residual error is inflated by ' +
+        'IOV<sub>CL</sub> = ' + fit.recencyVar + ' × (1 − e<sup>−age/τ</sup>), saturating at the ' +
+        'published between-occasion variance — an old sample is discounted, never discarded. ' +
+        'Realised weights: ' + rws.map(esc).join('; ') + '.</td></tr>';
+    }
     h += '</table>';
 
     // 4 — forecast (chart + trough table)
