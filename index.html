@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 16:51 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 18:05 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -315,8 +315,8 @@ details.help li { margin: 4px 0; }
 /* P1: four-step guide under the header */
 .stepper {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 7px 18px; background: #fffbeb; border-bottom: 1px solid #fde68a;
-  font-size: 12.5px; color: #78350f; max-width: 1720px; margin: 0 auto;
+  padding: 7px 18px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+  font-size: 12.5px; color: #78350f;
 }
 .stepper.hidden { display: none; }
 .stepper .step { display: flex; align-items: center; gap: 6px; opacity: .55; }
@@ -545,7 +545,7 @@ table.data tr.assumed td { background: #fffbeb; }
 /* Autosave recovery bar */
 .restore-bar {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  margin: 10px auto; max-width: 1180px; padding: 9px 14px;
+  padding: 9px 14px;
   border: 1px solid #f59e0b; background: #fffbeb; border-radius: 6px; font-size: 13px;
 }
 .restore-bar .restore-actions { margin-left: auto; display: flex; gap: 8px; }
@@ -597,28 +597,36 @@ table.data tr.assumed td { background: #fffbeb; }
   </div>
 </header>
 
-<!-- Autosave recovery: offered, never applied silently -->
-<div class="restore-bar no-print" id="restoreBar" role="status" hidden>
-  <span id="restoreText"></span>
-  <span class="restore-actions">
-    <button class="primary" id="restoreYes" title="Load the autosaved doses and measurements back into the form">Restore</button>
-    <button id="restoreNo" title="Discard the autosaved session and start empty">Discard</button>
-  </span>
-</div>
-
-<!-- Novice stepper: guides the first case; each dot fills as the step is done.
-     Numbers match the numbered cards below (1 Drug & patient, 2 Dosing
-     schedule & measured concentrations, 3 Forecast) — card 4 (Regimen
-     explorer) is a downstream tool used after a forecast exists, so it has
-     no onboarding step of its own. -->
-<div class="stepper no-print" id="stepper">
-  <span class="step" data-step="wt"><i>1</i> Enter weight</span>
-  <span class="step" data-step="dose"><i>2</i> Add doses &amp; samples</span>
-  <span class="step" data-step="run"><i>3</i> Run forecast</span>
-  <button class="linklike" id="stepperDismiss" title="Hide this guide">dismiss</button>
-</div>
 
 <main class="layout">
+
+  <!-- Autosave recovery: offered, never applied silently. Lives inside
+       main.layout (not before it) so it gets the exact same width/centering
+       as the cards below via the same flex-stretch behaviour — it used to
+       sit outside <main> with its own independently-tuned max-width, which
+       only approximately matched the cards' actual box at any given
+       viewport width instead of matching it exactly. -->
+  <div class="restore-bar no-print" id="restoreBar" role="status" hidden>
+    <span id="restoreText"></span>
+    <span class="restore-actions">
+      <button class="primary" id="restoreYes" title="Load the autosaved doses and measurements back into the form">Restore</button>
+      <button id="restoreNo" title="Discard the autosaved session and start empty">Discard</button>
+    </span>
+  </div>
+
+  <!-- Novice stepper: guides the first case; each dot fills as the step is
+       done. Numbers match the numbered cards below (1 Drug & patient, 2
+       Dosing schedule & measured concentrations, 3 Forecast) — card 4
+       (Regimen explorer) is a downstream tool used after a forecast exists,
+       so it has no onboarding step of its own. Also moved inside
+       main.layout for the same width-matching reason as the restore bar
+       above. -->
+  <div class="stepper no-print" id="stepper">
+    <span class="step" data-step="wt"><i>1</i> Enter weight</span>
+    <span class="step" data-step="dose"><i>2</i> Add doses &amp; samples</span>
+    <span class="step" data-step="run"><i>3</i> Run forecast</span>
+    <button class="linklike" id="stepperDismiss" title="Hide this guide">dismiss</button>
+  </div>
 
   <!-- ============ 1 · SESSION BAR: drug + patient ============ -->
   <div class="card sessionbar" id="patientCard">
@@ -884,7 +892,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.17.0';
+  ECU.VERSION = '0.18.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
