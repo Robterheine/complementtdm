@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 12:10 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 13:41 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -161,14 +161,11 @@ table.data td.num, table.data th.num { text-align: right; }
 .badge.ok { background: #dcfce7; color: #166534; }
 
 /* v0.10.0 — fit diagnostics (GOF + EBE forest) */
-#diagBlock { margin: 8px 0 2px; }
-#diagBlock summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent-dark); padding: 5px 0; }
-#diagBlock summary:hover { color: var(--accent); }
+.diag-open { font-size: 13px; padding: 5px 0; display: inline-block; }
 .diag-hint { font-weight: 600; }
 .diag-hint.ok { color: #15803d; }
 .diag-hint.warn { color: #b45309; }
 .diag-hint.bad { color: #b91c1c; }
-.diag-body { padding: 6px 2px 2px; }
 .diag-h { margin: 10px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
 .diag-chart { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; background: #fbfdfe; }
 .diag-res { margin-top: 10px; }
@@ -291,6 +288,7 @@ footer.app .credit a:hover { text-decoration: underline; }
   max-width: 640px; max-height: 82vh; overflow-y: auto;
   padding: 16px 20px; position: relative;
 }
+.modal.modal-wide { max-width: 700px; }
 .modal h2 { margin: 0 0 10px; font-size: 16px; color: var(--ink); }
 .modal h3 { margin: 14px 0 4px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .modal p { font-size: 12.5px; color: #334155; margin: 6px 0; line-height: 1.5; }
@@ -414,7 +412,6 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   .rp-diag .res-row.hl { background: transparent; }
   .rp-diag .ebe-track { background: #f1f5f9; }
   .rp-diag .diag-h { color: #64748b; }
-  #diagBlock { display: none; }
   footer.app { display: block; font-size: 10px; padding: 4px 8px; }
   footer.app .disclaimer { margin-bottom: 8px; }
 }
@@ -682,7 +679,7 @@ table.data tr.assumed td { background: #fffbeb; }
       </div>
       <div id="chart"></div>
     </div>
-    <div class="legend-note">Band = 5–95% · line = median · red points = measurements · dashed line = target.</div>
+    <div class="legend-note">Individual = incorporates this patient's own measured levels · Population = model only, no patient data yet · red points = measurements · dashed amber line = target · faint dotted amber = a projected future dose, not yet given.</div>
 
     <div class="progress-wrap" id="progress">
       <div class="bar"><div id="progressBar"></div></div>
@@ -725,33 +722,45 @@ table.data tr.assumed td { background: #fffbeb; }
     <div id="paramBlock"></div>
     <div id="troughBlock"></div>
     <div id="advisoryBlock"></div>
+  </div>
 
-    <!-- Dose-interval explorer: what this patient's own posterior predicts for
-         other dosing intervals. Shows consequences; recommends nothing. -->
-    <details id="intervalCard" class="fold" hidden>
-      <summary>Regimen explorer <span class="hint">— what a dose or interval change predicts at steady state</span>
-        <button type="button" class="info" data-help="ivexplore" aria-label="About the regimen explorer" aria-expanded="false">ⓘ</button>
-      </summary>
-      <div class="fold-body">
-        <div class="iv-controls no-print">
-          <label class="f" for="iv-vary">Vary</label>
-          <select id="iv-vary" title="Which quantity to scan a range of candidates around — the other stays fixed at the value entered">
-            <option value="interval">Interval</option>
-            <option value="dose">Dose</option>
-          </select>
-          <label class="f" for="iv-amt">Dose (mg)</label>
-          <input type="number" id="iv-amt" step="any" title="Dose per administration to evaluate — prefilled with the last dose entered">
-          <label class="f" for="iv-interval">Interval (days)</label>
-          <input type="number" id="iv-interval" step="any" title="Dosing interval to evaluate — prefilled with the interval derived from the entered schedule">
-          <button class="primary" id="iv-run" title="Evaluate candidates around these values using this patient's fitted parameters">Explore</button>
-          <span class="hint" id="iv-status"></span>
-        </div>
-        <div id="iv-out"></div>
-      </div>
-    </details>
+  <!-- ============ 4 · REGIMEN EXPLORER ============
+       What this patient's own fitted parameters predict for a different dose
+       or interval. Always visible (like cards 2-3, it shows its own "nothing
+       yet" state rather than disappearing) so the four-step structure the
+       numbering establishes stays intact. Shows consequences; recommends
+       nothing — no candidate is ever marked as preferred. -->
+  <div class="card" id="regimenCard">
+    <h2><span class="stepnum">4</span> Regimen explorer
+      <button type="button" class="info" data-help="ivexplore" aria-label="About the regimen explorer" aria-expanded="false">ⓘ</button>
+    </h2>
+    <div class="iv-controls no-print">
+      <label class="f" for="iv-vary">Vary</label>
+      <select id="iv-vary" title="Which quantity to scan a range of candidates around — the other stays fixed at the value entered">
+        <option value="interval">Interval</option>
+        <option value="dose">Dose</option>
+      </select>
+      <label class="f" for="iv-amt">Dose (mg)</label>
+      <input type="number" id="iv-amt" step="any" title="Dose per administration to evaluate — prefilled with the last dose entered">
+      <label class="f" for="iv-interval">Interval (days)</label>
+      <input type="number" id="iv-interval" step="any" title="Dosing interval to evaluate — prefilled with the interval derived from the entered schedule">
+      <button class="primary" id="iv-run" title="Evaluate candidates around these values using this patient's fitted parameters" disabled>Explore</button>
+      <span class="hint" id="iv-status"></span>
+    </div>
+    <div id="iv-out"><div class="note">Run a forecast in card 3 first — this explorer reuses that fit's own parameters.</div></div>
   </div>
 
 </main>
+
+<!-- Fit diagnostics dialog: GOF scatter + EBE forest, opened from a button
+     next to the individualized parameters. Same modal pattern as About. -->
+<div class="modal-backdrop" id="diagModal" hidden>
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="diagTitle">
+    <button class="modal-close" id="diagClose" title="Close">×</button>
+    <h2 id="diagTitle">Fit diagnostics</h2>
+    <div id="diagModalBody"></div>
+  </div>
+</div>
 
 <!-- Footer: short identity line on screen; the full research-use disclaimer
      and model sources are in the About dialog and the printed report -->
@@ -809,7 +818,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.14.0';
+  ECU.VERSION = '0.15.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2410,6 +2419,45 @@ table.data tr.assumed td { background: #fffbeb; }
 
     var gridMat = postMat.map(function (row) { return row ? row.slice(0, grid.length) : null; });
     var band = statsOfMatrix(gridMat);
+
+    /* ---- chart-only continuation (v0.15.0) --------------------------------
+     * `band`/`priorBand` above are computed from the clinician's REAL doses
+     * only, so past the last of them the curve can only wash out toward
+     * zero — which looks like therapy has stopped even for a patient still
+     * on a q8w maintenance regimen. This block runs a SEPARATE, display-only
+     * simulation that continues the regimen at the patient's own historical
+     * dose/interval, for the chart alone. It must never reach:
+     *   - `ctx.doses` / the MAP+MCMC likelihood — already computed above,
+     *     from the real doses only, and untouched here;
+     *   - `troughs`/`troughStats` (below) — computed from the real `doses`;
+     *     `virtualTroughTime` lands one instant BEFORE the first projected
+     *     dose's administration time, so it is causally identical whichever
+     *     doses array reaches it (PK cannot see a dose before it is given) —
+     *     it must keep using the real `doses` so nothing here can silently
+     *     shift the "assumed dose" trough that the table already reports. */
+    var chartBand = band, chartPriorBand = priorBand, chartProjectedDoses = [];
+    var contSpec = M.drug();
+    var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
+    var contAmt = doses[doses.length - 1].amt;
+    for (var pc = 1; pc <= 30; pc++) {
+      var pt = lastDose + pc * interval;
+      if (pt >= horizon) break;
+      chartProjectedDoses.push({ t: pt, amt: contAmt, route: contRoute });
+    }
+    if (chartProjectedDoses.length) {
+      var chartDoses = doses.concat(chartProjectedDoses);
+      // Display-only curve, not a decision number: subsampled draws keep this
+      // cheap (same tradeoff the regimen explorer already makes).
+      var chartPriorEta = subsample(priorEta, 250);
+      var chartPriorAux = priorAux ? subsample(priorAux, 250) : null;
+      var chartPostDraws = subsample(draws, 250);
+      var chartPostAux = postAux ? subsample(postAux, 250) : null;
+      var priorChartMat = await simulateDraws(chartPriorEta, chartDoses, grid, input.wt, disease, null, 64, age, drug, chartPriorAux);
+      chartPriorBand = statsOfMatrix(priorChartMat);
+      var postChartMat = await simulateDraws(chartPostDraws, chartDoses, grid, input.wt, disease, null, 64, age, drug, chartPostAux);
+      chartBand = statsOfMatrix(postChartMat);
+    }
+
     if (target == null) target = M.drug().targetDefault || 75;
     var troughStats = troughs.map(function (t, i) {
       var col = grid.length + i;
@@ -2500,6 +2548,12 @@ table.data tr.assumed td { background: #fffbeb; }
       grid: grid,
       priorBand: priorBand,
       band: band,
+      // display-only: the chart plots these, continuing the regimen past the
+      // last real dose; troughs/fitting above are unaffected (see comment
+      // above chartBand's computation)
+      chartPriorBand: chartPriorBand,
+      chartBand: chartBand,
+      chartProjectedDoses: chartProjectedDoses,
       troughs: troughStats,
       clQ: { p5: quantileSorted(clArr, 0.05), med: quantileSorted(clArr, 0.5), p95: quantileSorted(clArr, 0.95) },
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
@@ -3934,8 +3988,12 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     var rel = fit.rel;
     var grid = fit.grid;
-    var med = fit.band.med, p5 = fit.band.p5, p95 = fit.band.p95;
-    var pm5 = fit.priorBand.p5, pm95 = fit.priorBand.p95;
+    // chartBand/chartPriorBand continue the regimen past the last real dose
+    // (same historical dose/interval) so the curve doesn't wash out to zero
+    // and read as "therapy stopped"; troughs/fitting elsewhere are computed
+    // from the real doses only and are unaffected by this (see bayes.js).
+    var med = fit.chartBand.med, p5 = fit.chartBand.p5, p95 = fit.chartBand.p95;
+    var pm5 = fit.chartPriorBand.p5, pm95 = fit.chartPriorBand.p95;
     var xMin = fit.windowStart || 0;
     // Only quantified samples are plottable: blank-valued censored samples have
     // no numeric result (plotting them at 0 would misrepresent a below-LLOQ
@@ -3977,17 +4035,23 @@ table.data tr.assumed td { background: #fffbeb; }
     var rows = [];
 
     if (fit.hasObs) {
-      bands.push({ x: grid, lo: p5, hi: p95, fill: 'rgba(14,116,144,.16)' });
-      series.push({ x: grid, y: med, color: '#0e7490', width: 2.2, label: 'Posterior median' });
-      rows.push({ label: 'Posterior median', color: '#0e7490', values: med });
-      legend.push({ label: 'Posterior 5–95% + median', color: 'rgba(14,116,144,.55)', swatch: 'band' });
+      /* Population band pushed FIRST so it paints underneath (SVG paints in
+       * DOM/array order) — the narrower, individually-informed band then sits
+       * clearly on top instead of being muted by the wider band painted over
+       * it. ("Individual"/"Population", not "Posterior"/"Prior": a clinician
+       * reading this chart while dosing a patient should not need to know
+       * what a posterior distribution is.) */
       bands.push({ x: grid, lo: pm5, hi: pm95, fill: 'rgba(100,116,139,.10)' });
-      legend.push({ label: 'Prior (population) 5–95%', color: 'rgba(100,116,139,.45)', swatch: 'band' });
+      legend.push({ label: 'Population prediction 5–95%', color: 'rgba(100,116,139,.45)', swatch: 'band' });
+      bands.push({ x: grid, lo: p5, hi: p95, fill: 'rgba(14,116,144,.16)' });
+      series.push({ x: grid, y: med, color: '#0e7490', width: 2.2, label: 'Individual prediction (median)' });
+      rows.push({ label: 'Individual prediction (median)', color: '#0e7490', values: med });
+      legend.push({ label: 'Individual prediction 5–95%', color: 'rgba(14,116,144,.55)', swatch: 'band' });
     } else {
       bands.push({ x: grid, lo: pm5, hi: pm95, fill: 'rgba(100,116,139,.14)' });
-      series.push({ x: grid, y: fit.priorBand.med, color: '#475569', width: 2, label: 'Population median' });
-      rows.push({ label: 'Population median', color: '#475569', values: fit.priorBand.med });
-      legend.push({ label: 'Population (prior) 5–95% + median', color: 'rgba(100,116,139,.45)', swatch: 'band' });
+      series.push({ x: grid, y: fit.chartPriorBand.med, color: '#475569', width: 2, label: 'Population prediction (median)' });
+      rows.push({ label: 'Population prediction (median)', color: '#475569', values: fit.chartPriorBand.med });
+      legend.push({ label: 'Population prediction 5–95%', color: 'rgba(100,116,139,.45)', swatch: 'band' });
     }
     rows.push({ label: 'Observed', color: '#dc2626', values: {} });
     legend.push({ label: 'Observation', color: '#dc2626', swatch: 'dot' });
@@ -3997,6 +4061,17 @@ table.data tr.assumed td { background: #fffbeb; }
     var vlines = rel.dosesRel.filter(function (d) { return d.t >= xMin - 0.5 && d.t <= xMax; })
       .map(function (d) { return { x: d.t, color: '#dbe4ec' }; });
     if (rel.nowRel >= xMin - 0.5 && rel.nowRel <= xMax) vlines.push({ x: rel.nowRel, color: '#b45309', dash: '4 4' });
+    /* Projected continuation dose(s): NOT entered by the clinician — the
+     * regimen is assumed to continue at the patient's own historical dose and
+     * interval, purely so the curve doesn't wash out to zero past the last
+     * real dose. Dotted and lighter than both a real "Dose" line and "Today",
+     * so it cannot be mistaken for either. */
+    if (fit.chartProjectedDoses && fit.chartProjectedDoses.length) {
+      fit.chartProjectedDoses.forEach(function (d) {
+        if (d.t >= xMin - 0.5 && d.t <= xMax) vlines.push({ x: d.t, color: 'rgba(180,83,9,.55)', dash: '2 3' });
+      });
+      legend.push({ label: 'Projected dose (not entered)', color: 'rgba(180,83,9,.55)', swatch: 'line', dash: '2 3' });
+    }
 
     var cfg = {
       xMin: xMin, xMax: xMax, yMax: yMax, yMin: yMin, logY: logY,
@@ -4074,18 +4149,15 @@ table.data tr.assumed td { background: #fffbeb; }
         '<span class="k">' + etaLabel(pm) + ' (MAP)</span><span class="v">' + fmtEtaVec(pm) + '</span>' +
         '</div>';
       html += infoBars(fit);
-      // v0.10.0: collapsed diagnostics block (GOF residuals + EBE forest),
-      // progressive disclosure — the card stays clean unless opened.
+      // v0.15.0: diagnostics (GOF residuals + EBE forest) moved from an inline
+      // <details> to a modal (openDiagnostics), reusing the About/Report
+      // modal pattern — a small button here, next to the parameters that
+      // depend on this fit, keeps the hint visible without opening anything.
       if (D && fit.obsData && fit.obsData.length) {
         var hint = D.summaryHint(fit);
-        html += '<details class="help diag" id="diagBlock"><summary>Fit diagnostics' +
-          (hint ? ' — <span class="diag-hint ' + (hint === 'good' ? 'ok' : hint === 'warn' ? 'warn' : 'bad') + '">' + hint + '</span>' : '') + '</summary>' +
-          '<div class="diag-body">' +
-          '<h4 class="diag-h">Observed vs individual prediction</h4>' +
-          '<div class="diag-gof">' + D.gofPanel(fit, M.drug(), function (t) { return fmtDate(rel.t0ms + t * DAY); }) + '</div>' +
-          '<h4 class="diag-h">This patient vs the population (EBEs)</h4>' +
-          '<div class="diag-ebe">' + D.ebePanel(fit, M.drug()) + '</div>' +
-          '</div></details>';
+        html += '<button type="button" class="linklike diag-open" id="btnDiagnostics">Fit diagnostics' +
+          (hint ? ' <span class="diag-hint ' + (hint === 'good' ? 'ok' : hint === 'warn' ? 'warn' : 'bad') + '">' + hint + '</span>' : '') +
+          ' ›</button>';
       }
       html += '<details class="help"><summary>How this was calculated</summary><ul>' +
         '<li><b>Best-fit (MAP) parameters:</b> clearance ' + fmtC(cl.med) + ' L/day [5–95% ' + fmtC(cl.p5) + '–' + fmtC(cl.p95) +
@@ -4107,7 +4179,8 @@ table.data tr.assumed td { background: #fffbeb; }
         '</div>';
     }
     pb.innerHTML = html;
-    renderDiagnostics(fit, rel);
+    var diagBtn = document.getElementById('btnDiagnostics');
+    if (diagBtn) diagBtn.addEventListener('click', function () { openDiagnostics(fit, rel); });
     showIntervalCard();
 
     // troughs
@@ -4201,7 +4274,23 @@ table.data tr.assumed td { background: #fffbeb; }
 
   /* v0.10.0 — diagnostics rendering: GOF scatter (SVG via chart.js) inside the
    * details block + hover sync between scatter points and residual rows. */
-  function renderDiagnostics(fit, rel, hostId) {
+  /* v0.15.0 — diagnostics moved from an inline <details> to a modal, opened
+   * from the button rendered next to the individual parameters. The content
+   * is built lazily here (not on every fit render) since it's only needed if
+   * the clinician actually opens it. */
+  function openDiagnostics(fit, rel) {
+    var D = ECU.diagnostics;
+    if (!D || !fit || !fit.obsData || !fit.obsData.length) return;
+    $('diagModalBody').innerHTML =
+      '<h4 class="diag-h">Observed vs individual prediction</h4>' +
+      '<div class="diag-gof">' + D.gofPanel(fit, M.drug(), function (t) { return fmtDate(rel.t0ms + t * DAY); }, 'diagModalGof') + '</div>' +
+      '<h4 class="diag-h">This patient vs the population (EBEs)</h4>' +
+      '<div class="diag-ebe">' + D.ebePanel(fit, M.drug()) + '</div>';
+    openModal('diagModal', 'diagClose');
+    renderDiagnostics(fit, rel, 'diagModalGof', 'diagModalBody');
+  }
+
+  function renderDiagnostics(fit, rel, hostId, rowsContainerId) {
     var host = document.getElementById(hostId || 'gofChart');
     if (!host) return;
     var D = ECU.diagnostics;
@@ -4209,10 +4298,14 @@ table.data tr.assumed td { background: #fffbeb; }
     if (cfg) {
       cfg.width = 560; cfg.height = 400;
       C.render(host, cfg);
-      // hover sync: point <-> residual row
+      // hover sync: point <-> residual row. The container id is a parameter
+      // (not hardcoded) so this works whether the residual rows live in the
+      // diagnostics modal or, in principle, anywhere else — a hardcoded
+      // '#diagBlock' here would silently stop finding any rows the moment
+      // that id moved (as it did in v0.15.0, diagBlock -> the modal).
       var svg = host.querySelector('svg');
       var pts = host.querySelectorAll('.gof-pt');
-      var rows = document.querySelectorAll('#diagBlock .res-row');
+      var rows = document.querySelectorAll('#' + (rowsContainerId || 'diagBlock') + ' .res-row');
       function highlight(idx, on) {
         rows.forEach(function (r) {
           if (r.getAttribute('data-obs-idx') === String(idx)) r.classList.toggle('hl', on);
@@ -4571,10 +4664,15 @@ table.data tr.assumed td { background: #fffbeb; }
     $('btnAbout').addEventListener('click', openAbout);
     $('aboutClose').addEventListener('click', closeAbout);
     $('aboutModal').addEventListener('click', function (e) { if (e.target === $('aboutModal')) closeAbout(); });
+
+    var closeDiag = function () { closeModal('diagModal'); };
+    $('diagClose').addEventListener('click', closeDiag);
+    $('diagModal').addEventListener('click', function (e) { if (e.target === $('diagModal')) closeDiag(); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
         if (!$('aboutModal').hidden) closeAbout();
         if (!$('reportModal').hidden) closeReportDialog();
+        if (!$('diagModal').hidden) closeModal('diagModal');
         // the help popover closes (and re-syncs aria-expanded) in wireHelpPopovers' keydown handler
       }
     });
@@ -4656,8 +4754,11 @@ table.data tr.assumed td { background: #fffbeb; }
     $('chart').innerHTML = '<div class="note">Enter the dosing schedule and press “Run forecast” to see the concentration–time plot.</div>';
     $('fitStatus').innerHTML = '<div class="note">Enter the patient, add the actual doses (and measurements if available), then press “Run forecast”.</div>';
     $('paramBlock').innerHTML = $('troughBlock').innerHTML = $('advisoryBlock').innerHTML = '';
-    var ivCard = $('intervalCard');
-    if (ivCard) { ivCard.hidden = true; ivCard.open = false; $('iv-out').innerHTML = ''; }
+    var ivRunBtn = $('iv-run');
+    if (ivRunBtn) {
+      ivRunBtn.disabled = true;
+      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first — this explorer reuses that fit’s own parameters.</div>';
+    }
     $('staleBanner').style.display = 'none';
     updateRunReady();
     updateStepper();
@@ -4684,11 +4785,18 @@ table.data tr.assumed td { background: #fffbeb; }
               state.fit.rel.dosesRel && state.fit.rel.dosesRel.length);
   }
 
+  /* Card 4 is always visible (like cards 2-3, it shows its own "nothing yet"
+   * state rather than disappearing) — only the Explore button and its default
+   * values depend on a fit actually existing. */
   function showIntervalCard() {
-    var card = $('intervalCard');
-    if (!card) return;
-    if (!intervalExplorerAvailable()) { card.hidden = true; return; }
-    card.hidden = false;
+    var runBtn = $('iv-run');
+    if (!runBtn) return;
+    if (!intervalExplorerAvailable()) {
+      runBtn.disabled = true;
+      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first — this explorer reuses that fit’s own parameters.</div>';
+      return;
+    }
+    runBtn.disabled = false;
     var rel = state.fit.rel;
     var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
     var amtEl = $('iv-amt'), ivEl = $('iv-interval');
@@ -4798,8 +4906,12 @@ table.data tr.assumed td { background: #fffbeb; }
     var xs = sc.rows.map(function (r) { return byDose ? r.amt : r.interval; });
     var h = '';
 
-    /* Two curves, because "next" and "steady state" answer different
-     * questions and can disagree sharply for a drug that accumulates. */
+    /* Only the steady-state curve is charted: "next" and "steady state" can
+     * disagree sharply for a drug that accumulates, but two overlapping lines
+     * answering different questions read as clutter on this chart. "Next" is
+     * still fully computed and shown as its own table column below — nothing
+     * is lost, only the graph is simplified. No candidate is ever highlighted
+     * as preferred; only the entered (baseline) value is marked. */
     var cfg = {
       width: 560, height: 260,
       xMin: xs[0], xMax: xs[xs.length - 1],
@@ -4807,20 +4919,19 @@ table.data tr.assumed td { background: #fffbeb; }
       xLabel: byDose ? 'Dose per administration (mg)' : 'Dosing interval (days)',
       yLabel: 'P(trough > ' + tgt + ' µg/mL)  %',
       series: [
-        { x: xs, y: sc.rows.map(function (r) { return r.ss.pTarget * 100; }), color: '#0e7490', width: 2.2 },
-        { x: xs, y: sc.rows.map(function (r) { return r.next.pTarget * 100; }), color: '#64748b', width: 1.8, dash: '5 4' }
+        { x: xs, y: sc.rows.map(function (r) { return r.ss.pTarget * 100; }), color: '#0e7490', width: 2.2 }
       ],
       points: sc.rows.map(function (r, i) { return { x: xs[i], y: r.ss.pTarget * 100, color: '#0e7490' }; }),
       vlines: [{ x: sc.baseline, color: '#b45309', dash: '4 4' }],
       legend: [
         { label: 'Continuing at this ' + (byDose ? 'dose' : 'interval'), color: '#0e7490', swatch: 'line' },
-        { label: 'Changing the next dose only', color: '#64748b', swatch: 'line', dash: '5 4' },
         { label: 'Entered value', color: '#b45309', swatch: 'line', dash: '4 4' }
       ],
       title: 'Probability of staying above target by ' + (byDose ? 'dose' : 'dosing interval'),
       desc: 'Probability that the trough stays above ' + tgt + ' µg/mL for each candidate ' +
-            (byDose ? 'dose' : 'dosing interval') + ', both if the patient is continued on it and if only ' +
-            'the next dose is changed. The values are listed in the table below the chart.'
+            (byDose ? 'dose' : 'dosing interval') + ', once the patient is continued on it long enough ' +
+            'to reach steady state. The values, including the effect of changing only the next dose, ' +
+            'are listed in the table below the chart.'
     };
     h += '<div class="iv-chart" id="ivChart"></div>';
     h += intervalScanTableHtml(sc, false);
@@ -4984,7 +5095,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * copies shared one id, so only the on-screen one was ever filled and the
      * printed page showed an empty bordered box. */
     if (state.fit && state.fit.rel && state.fit.hasObs) {
-      try { renderDiagnostics(state.fit, state.fit.rel, 'rpGofChart'); } catch (e) { /* never block printing */ }
+      try { renderDiagnostics(state.fit, state.fit.rel, 'rpGofChart', 'rpDiagBody'); } catch (e) { /* never block printing */ }
     }
     // give the browser a frame to lay out the sheet before print
     requestAnimationFrame(function () { window.print(); });
@@ -5109,8 +5220,8 @@ table.data tr.assumed td { background: #fffbeb; }
       ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ')' :
       'Population (prior) forecast — no individualization') + '</td></tr>';
     if (fit.hasObs) {
-      h += '<tr><td>Clearance (posterior)</td><td>' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) + ']</td></tr>';
-      h += '<tr><td>Central volume (posterior)</td><td>' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + ']</td></tr>';
+      h += '<tr><td>Clearance (individual)</td><td>' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) + ']</td></tr>';
+      h += '<tr><td>Central volume (individual)</td><td>' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + ']</td></tr>';
       h += '<tr><td>Random effects ' + etaLabel(fit.map) + '</td><td>' + fmtEtaVec(fit.map) + '</td></tr>';
       if (fit.etaInformation && fit.map.etaNames) {
         var shParts = [];
@@ -5123,7 +5234,7 @@ table.data tr.assumed td { background: #fffbeb; }
           '<div class="rp-shrink-h">Data-informativeness per parameter (100% = determined by the samples, 0% = population prior)</div>' + bars + '</div></td></tr>';
         // v0.10.0: individual GOF — residual table + EBE forest in the report
         if (D && fit.obsData && fit.obsData.length) {
-          h += '<tr><td colspan="2"><div class="rp-diag">' +
+          h += '<tr><td colspan="2"><div class="rp-diag" id="rpDiagBody">' +
             '<div class="rp-shrink-h">Individual fit diagnostics</div>' +
             D.gofPanel(fit, M.drug(), function (t) { return fmtDate(rel.t0ms + t * DAY); }, 'rpGofChart') +
             '<div class="rp-shrink-h" style="margin-top:8px">This patient vs the population (empirical Bayes estimates)</div>' +
