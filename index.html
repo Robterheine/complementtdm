@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 13:41 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 14:00 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -543,12 +543,15 @@ table.data tr.assumed td { background: #fffbeb; }
   </span>
 </div>
 
-<!-- Novice stepper: guides the first case; each dot fills as the step is done -->
+<!-- Novice stepper: guides the first case; each dot fills as the step is done.
+     Numbers match the numbered cards below (1 Drug & patient, 2 Dosing
+     schedule & measured concentrations, 3 Forecast) — card 4 (Regimen
+     explorer) is a downstream tool used after a forecast exists, so it has
+     no onboarding step of its own. -->
 <div class="stepper no-print" id="stepper">
   <span class="step" data-step="wt"><i>1</i> Enter weight</span>
-  <span class="step" data-step="dose"><i>2</i> Add doses</span>
-  <span class="step" data-step="obs"><i>3</i> Add samples (optional)</span>
-  <span class="step" data-step="run"><i>4</i> Run forecast</span>
+  <span class="step" data-step="dose"><i>2</i> Add doses &amp; samples</span>
+  <span class="step" data-step="run"><i>3</i> Run forecast</span>
   <button class="linklike" id="stepperDismiss" title="Hide this guide">dismiss</button>
 </div>
 
@@ -818,7 +821,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.15.0';
+  ECU.VERSION = '0.16.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3583,13 +3586,16 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   /* P1: four-step guide under the header; each dot fills as the step is done. */
+  /* v0.16.0: the stepper's numbers must match the numbered cards below it —
+   * "Add samples" used to be its own numbered step 3, but samples are
+   * optional and live in card 2 alongside doses, so a separate number there
+   * disagreed with the card it actually belonged to. Merged into one step. */
   function updateStepper() {
     if (typeof document === 'undefined') return;
     var el = $('stepper');
     if (!el || el.classList.contains('hidden')) return;
     var wtDone = state.patient.wt >= 35 && state.patient.wt <= 200;
     var doseDone = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
-    var obsDone = state.obs.length > 0;
     var runDone = !!state.fit && !state.stale;
     function set(step, done, active) {
       var s = el.querySelector('[data-step="' + step + '"]');
@@ -3599,7 +3605,6 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     set('wt', wtDone, true);
     set('dose', doseDone, wtDone);
-    set('obs', obsDone, wtDone && doseDone);
     set('run', runDone, wtDone && doseDone);
   }
 
