@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 14:00 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 16:51 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -100,11 +100,6 @@ details.sess-fold[open] { padding-bottom: 10px; }
 .chart-head { display: flex; justify-content: flex-end; margin: 0 0 2px; }
 .chart-log { margin: 0; font-size: 12px; color: var(--muted); }
 .chart-log input { cursor: pointer; }
-
-@media (max-width: 700px) {
-  .sess-row { flex-direction: column; align-items: stretch; }
-  .sess-hint { padding-bottom: 0; min-height: 0; }
-}
 
 .card {
   background: var(--card);
@@ -309,10 +304,6 @@ footer.app .credit a:hover { text-decoration: underline; }
 
 /* prevent grid blow-out on narrow screens */
 main.layout, main.layout > .card, table.data, input, select, .actions-inline, .row2 > div, .row3 > div { min-width: 0; }
-@media (max-width: 560px) {
-  .row2, .row3 { grid-template-columns: 1fr; }
-  header.app, main.layout { padding-left: 10px; padding-right: 10px; }
-}
 
 details.help { margin: 8px 0; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 6px 11px; }
 details.help summary { cursor: pointer; font-size: 12.5px; font-weight: 650; color: #0c4a6e; }
@@ -386,8 +377,81 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 /* P-badge is click-tappable too (opens the probability popover) */
 .badge[data-help] { cursor: help; }
 
+/* =========================================================================
+ * RESPONSIVE (v0.17.0) — two tiers, consolidated to one block each. Plain
+ * CSS custom properties can't be read inside an @media condition and this
+ * project has no build-time constant substitution (build.mjs just
+ * concatenates files), so "one number, many places" means one documented
+ * pair of literal breakpoints instead of a variable:
+ *
+ *   700px "compact"  — light touch. Currently: form rows that pair a date
+ *                       with a number stack instead of forcing two columns
+ *                       that would otherwise get uncomfortably narrow.
+ *   560px "phone"     — where the real restructuring happens: two-column
+ *                       grids collapse to one, row-wise comparison tables
+ *                       (trough table, regimen explorer) become stacked
+ *                       cards instead of scrolling sideways, the header's
+ *                       four action buttons become a 2x2 grid instead of an
+ *                       unpredictable wrap, and a few controls under a
+ *                       comfortable touch-target size get more tap area.
+ *                       (The SVG charts are handled separately, in
+ *                       src/chart.js + src/ui.js — they measure their own
+ *                       container's pixel width at render time rather than
+ *                       reading this breakpoint, since a chart's actual
+ *                       available width is its card's width minus padding,
+ *                       not the raw viewport width a CSS media query sees.)
+ * ========================================================================= */
+@media (max-width: 700px) {
+  .sess-row { flex-direction: column; align-items: stretch; }
+  .sess-hint { padding-bottom: 0; min-height: 0; }
+  .iv-controls input[type="number"] { width: 84px; }
+}
+
 @media (max-width: 560px) {
+  .row2, .row3 { grid-template-columns: 1fr; }
+  header.app, main.layout { padding-left: 10px; padding-right: 10px; }
   .stepper { gap: 10px; padding: 6px 10px; }
+
+  /* Header: keep all four actions (About/Print/Export/Import) rather than
+   * collapsing to a menu — this is a clinical tool used a handful of times
+   * per session, and hiding "Print report" behind a hamburger tap, or
+   * risking a mistapped icon on export/import of patient data, costs more
+   * than a two-row button grid does. */
+  header.app .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+  header.app .actions button { width: 100%; }
+  header.app h1 .appver { display: none; }
+
+  /* Row-wise comparison tables (trough table, regimen explorer): scrolling
+   * sideways to see a probability next to the dose it belongs to is worse
+   * than restyling to a card per row. The <table>/<tr>/<td> markup is
+   * unchanged (print, and any table without this class, is unaffected) —
+   * only the display type changes, driven by the data-label attribute
+   * already written onto each <td> at render time. */
+  table.data.responsive-cards thead { display: none; }
+  table.data.responsive-cards tbody tr {
+    display: block; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 8px;
+  }
+  table.data.responsive-cards tbody tr.iv-current { border-color: #b45309; }
+  table.data.responsive-cards tbody td {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; padding: 4px 0; border-bottom: 1px solid #f1f5f9; text-align: right;
+  }
+  table.data.responsive-cards tbody td:last-child { border-bottom: none; }
+  table.data.responsive-cards tbody td::before {
+    content: attr(data-label); font-weight: 600; color: #475569;
+    text-align: left; flex-shrink: 0;
+  }
+
+  /* Touch targets measured under a comfortable tap size: padding added
+   * (not a visual resize) so the ⓘ popover buttons, modal close button and
+   * the stepper's "dismiss" link are easier to hit without a mouse. */
+  /* button.info is a fixed 16x16px box with box-sizing:border-box, so
+   * padding alone shrinks its glyph rather than growing the tap target —
+   * the dimensions themselves need to grow. */
+  button.info { width: 30px; height: 30px; font-size: 13px; margin: -7px 0 -7px 2px; }
+  .modal-close { padding: 10px 14px; top: 2px; right: 2px; }
+  .stepper .linklike { padding: 6px 4px; }
 }
 
 /* print: the app UI is replaced by the generated report sheet
@@ -514,7 +578,6 @@ table.data tr.assumed td { background: #fffbeb; }
   padding: 1px 5px; margin-left: 4px; border: 1px solid #b45309; color: #b45309;
   border-radius: 3px; white-space: nowrap;
 }
-@media (max-width: 700px) { .iv-controls input[type="number"] { width: 84px; } }
 
 </style>
 </head>
@@ -821,7 +884,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.16.0';
+  ECU.VERSION = '0.17.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2876,9 +2939,63 @@ table.data tr.assumed td { background: #fffbeb; }
    *   hover:  {times[], rows: [{label, color, values[]}]}
    * }
    */
+  /* v0.17.0 — compact (phone) layout. Every chart here is one hand-built SVG
+   * string with a fixed viewBox, scaled to its container via
+   * style="width:100%": the same 12px axis text that is crisp at 960 units
+   * wide becomes ~5 real screen pixels once that viewBox is squeezed into a
+   * ~340px phone card. Continuously scaling one wide layout down cannot fix
+   * this — the fix is a genuinely different, narrower layout with LARGER
+   * text relative to the plot: bigger font sizes, fewer ticks, and the
+   * legend moved below the plot (where it can wrap onto more than one row,
+   * since it no longer fits as a single line at any font size that reads).
+   * The caller (ui.js) decides `compact` from the container's actual pixel
+   * width, not from chart.js — this module stays a pure cfg-in/SVG-out
+   * renderer with no DOM reads of its own. */
+  /* How many rows cfg.legend wraps onto at the given plot width and legend
+   * font size, using the identical greedy left-to-right packing the actual
+   * legend renderer below uses. Run once, before H is decided, so the
+   * reserved bottom margin always fits the real legend — a 3-item chart and
+   * a 6-item one (this app's charts range over that) get different heights
+   * instead of one guessed constant that overflows for the longer one. */
+  function countLegendRows(lg, iw, fsLegend) {
+    var x = 0, rows = 1;
+    (lg || []).forEach(function (it) {
+      var wTxt = Math.min(iw, it.label.length * (fsLegend * 0.56) + 24);
+      if (x + wTxt > iw && x > 0) { rows++; x = 0; }
+      x += wTxt;
+    });
+    return rows;
+  }
+
   function render(el, cfg) {
-    var W = cfg.width || 960, H = cfg.height || 440;
-    var m = { l: 62, r: 18, t: 40, b: 46 };
+    var compact = !!cfg.compact;
+    var W = cfg.width || (compact ? 340 : 960);
+    var fs = {
+      tick: compact ? 15 : 12,
+      axisLabel: compact ? 15 : 12.5,
+      legend: compact ? 14 : 11.5,
+      hline: compact ? 13.5 : 11.5
+    };
+    // Compact: a fixed plot height, plus a bottom margin SIZED TO THE ACTUAL
+    // LEGEND — x-ticks, the x-axis label, and N wrapped legend rows. The
+    // rotated y-axis label is dropped when compact (decorative next to the
+    // unit already spelled out in the legend/title) to give the y-tick
+    // numbers more room in the narrower left margin. H is derived, not
+    // caller-supplied, for compact charts — nothing to keep in sync as a
+    // chart's legend content changes.
+    var m, H;
+    if (compact) {
+      m = { l: 54, r: 10, t: 30, b: 0 };
+      var compactIw = W - m.l - m.r;
+      var legRows = countLegendRows(cfg.legend, compactIw, fs.legend);
+      var plotH = cfg.plotHeight || 210;
+      var tickBand = 20, axisLabelBand = 14 + fs.axisLabel, legendGap = 12, rowH = fs.legend + 10, pad = 10;
+      m.b = tickBand + axisLabelBand + legendGap + legRows * rowH + pad;
+      H = m.t + plotH + m.b;
+    } else {
+      m = { l: 62, r: 18, t: 40, b: 46 };
+      H = cfg.height || 440;
+    }
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var xMin = cfg.xMin || 0, xMax = cfg.xMax || 100;
     var yMax = cfg.yMax || 100;
@@ -2938,22 +3055,28 @@ table.data tr.assumed td { background: #fffbeb; }
     }
 
     // grid + y ticks (log decades when the log axis is requested)
-    var yt = logY ? logTicks(yMin, yMax) : niceTicks(0, yMax, 6);
+    var yt = logY ? logTicks(yMin, yMax) : niceTicks(0, yMax, compact ? 4 : 6);
     for (var i = 0; i < yt.length; i++) {
       var yy = Y(yt[i]);
       s.push('<line x1="' + m.l + '" y1="' + yy + '" x2="' + (m.l + iw) + '" y2="' + yy + '" stroke="#e8eef4" stroke-width="1"/>');
-      s.push('<text x="' + (m.l - 8) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="12" fill="#64748b">' + fmt(yt[i]) + '</text>');
+      s.push('<text x="' + (m.l - 8) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="' + fs.tick + '" fill="#64748b">' + fmt(yt[i]) + '</text>');
     }
     // x ticks
-    var xt = niceTicks(xMin, xMax, 8);
+    var xt = niceTicks(xMin, xMax, compact ? 4 : 8);
     for (var j = 0; j < xt.length; j++) {
       var xx = X(xt[j]);
       s.push('<line x1="' + xx + '" y1="' + (m.t + ih) + '" x2="' + xx + '" y2="' + (m.t + ih + 5) + '" stroke="#94a3b8"/>');
-      s.push('<text x="' + xx + '" y="' + (m.t + ih + 20) + '" text-anchor="middle" font-size="12" fill="#64748b">' + fmt(xt[j]) + '</text>');
+      s.push('<text x="' + xx + '" y="' + (m.t + ih + 20) + '" text-anchor="middle" font-size="' + fs.tick + '" fill="#64748b">' + fmt(xt[j]) + '</text>');
     }
-    // axis labels
-    s.push('<text x="' + (m.l + iw / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="12.5" fill="#475569">' + esc(cfg.xLabel || 'Time') + '</text>');
-    s.push('<text x="16" y="' + (m.t + ih / 2) + '" text-anchor="middle" font-size="12.5" fill="#475569" transform="rotate(-90 16 ' + (m.t + ih / 2) + ')">' + esc(cfg.yLabel || 'Concentration') + '</text>');
+    // axis labels — the rotated y-axis label is dropped when compact (see
+    // the note above render()); the x-axis label sits right under the ticks
+    // in the taller reserved bottom margin instead of pinned to H-8, so the
+    // legend rows below it have their own dedicated space.
+    var xLabelY = compact ? (m.t + ih + tickBand + fs.axisLabel + 4) : (H - 8);
+    s.push('<text x="' + (m.l + iw / 2) + '" y="' + xLabelY + '" text-anchor="middle" font-size="' + fs.axisLabel + '" fill="#475569">' + esc(cfg.xLabel || 'Time') + '</text>');
+    if (!compact) {
+      s.push('<text x="16" y="' + (m.t + ih / 2) + '" text-anchor="middle" font-size="' + fs.axisLabel + '" fill="#475569" transform="rotate(-90 16 ' + (m.t + ih / 2) + ')">' + esc(cfg.yLabel || 'Concentration') + '</text>');
+    }
 
     // dose vlines
     (cfg.vlines || []).forEach(function (v) {
@@ -2981,7 +3104,7 @@ table.data tr.assumed td { background: #fffbeb; }
       var y = Y(h.y);
       if (y < m.t || y > m.t + ih) return;
       s.push('<line x1="' + m.l + '" y1="' + y + '" x2="' + (m.l + iw) + '" y2="' + y + '" stroke="' + h.color + '" stroke-width="' + (h.width || 1.6) + '" stroke-dasharray="' + (h.dash || '7 5') + '"/>');
-      s.push('<text x="' + (m.l + iw - 6) + '" y="' + (y - 5) + '" text-anchor="end" font-size="11.5" fill="' + h.color + '" font-weight="600">' + esc(h.label || '') + '</text>');
+      s.push('<text x="' + (m.l + iw - 6) + '" y="' + (y - 5) + '" text-anchor="end" font-size="' + fs.hline + '" fill="' + h.color + '" font-weight="600">' + esc(h.label || '') + '</text>');
     });
 
     // series
@@ -3023,21 +3146,48 @@ table.data tr.assumed td { background: #fffbeb; }
       s.push('<line x1="' + (x - cap) + '" y1="' + y2.toFixed(1) + '" x2="' + (x + cap) + '" y2="' + y2.toFixed(1) + '" stroke="' + col + '" stroke-width="' + (b.width || 2.4) + '" stroke-linecap="round"/>');
     });
 
-    // legend (top-right, one row)
+    // legend
     var lg = cfg.legend || [];
-    var lx = m.l + iw - 8, ly = m.t + 16;
-    for (var L = lg.length - 1; L >= 0; L--) {
-      var it = lg[L];
-      var wTxt = it.label.length * 6.4 + 20;
-      lx -= wTxt;
-      if (it.swatch === 'band') {
-        s.push('<rect x="' + lx + '" y="' + (ly - 9) + '" width="13" height="11" fill="' + it.color + '" stroke="#94a3b8" stroke-width="0.5"/>');
-      } else if (it.swatch === 'dot') {
-        s.push('<circle cx="' + (lx + 6) + '" cy="' + (ly - 3.5) + '" r="4.2" fill="' + it.color + '" stroke="#fff" stroke-width="1.2"/>');
-      } else {
-        s.push('<line x1="' + lx + '" y1="' + (ly - 3.5) + '" x2="' + (lx + 14) + '" y2="' + (ly - 3.5) + '" stroke="' + it.color + '" stroke-width="2.4"' + (it.dash ? ' stroke-dasharray="' + it.dash + '"' : '') + '/>');
+    if (compact) {
+      /* Compact: below the plot, left-aligned, WRAPPING onto as many rows as
+       * it needs — the single-row right-to-left layout below can't be reused
+       * here, since at any font size that's legible on a phone this app's
+       * legends (up to 6 items: population/individual bands, observation,
+       * dose, today, a projected-dose marker) do not fit one row at any
+       * width. `countLegendRows` above already worked out exactly how many
+       * rows this legend needs and sized `m.b` (and so `H`) for it, so this
+       * loop's own wrapping decisions are guaranteed to have room. */
+      var clx = m.l, cly = xLabelY + legendGap + fs.legend;
+      var maxX = m.l + iw + m.r;
+      lg.forEach(function (it) {
+        var wTxt = it.label.length * (fs.legend * 0.56) + 24;
+        if (clx + wTxt > maxX && clx > m.l) { clx = m.l; cly += rowH; }
+        if (it.swatch === 'band') {
+          s.push('<rect x="' + clx + '" y="' + (cly - 9) + '" width="13" height="11" fill="' + it.color + '" stroke="#94a3b8" stroke-width="0.5"/>');
+        } else if (it.swatch === 'dot') {
+          s.push('<circle cx="' + (clx + 6) + '" cy="' + (cly - 3.5) + '" r="4.6" fill="' + it.color + '" stroke="#fff" stroke-width="1.2"/>');
+        } else {
+          s.push('<line x1="' + clx + '" y1="' + (cly - 3.5) + '" x2="' + (clx + 14) + '" y2="' + (cly - 3.5) + '" stroke="' + it.color + '" stroke-width="2.6"' + (it.dash ? ' stroke-dasharray="' + it.dash + '"' : '') + '/>');
+        }
+        s.push('<text x="' + (clx + 18) + '" y="' + cly + '" font-size="' + fs.legend + '" fill="#334155">' + esc(it.label) + '</text>');
+        clx += wTxt;
+      });
+    } else {
+      // top-right, one row (unchanged)
+      var lx = m.l + iw - 8, ly = m.t + 16;
+      for (var L = lg.length - 1; L >= 0; L--) {
+        var it2 = lg[L];
+        var wTxt2 = it2.label.length * 6.4 + 20;
+        lx -= wTxt2;
+        if (it2.swatch === 'band') {
+          s.push('<rect x="' + lx + '" y="' + (ly - 9) + '" width="13" height="11" fill="' + it2.color + '" stroke="#94a3b8" stroke-width="0.5"/>');
+        } else if (it2.swatch === 'dot') {
+          s.push('<circle cx="' + (lx + 6) + '" cy="' + (ly - 3.5) + '" r="4.2" fill="' + it2.color + '" stroke="#fff" stroke-width="1.2"/>');
+        } else {
+          s.push('<line x1="' + lx + '" y1="' + (ly - 3.5) + '" x2="' + (lx + 14) + '" y2="' + (ly - 3.5) + '" stroke="' + it2.color + '" stroke-width="2.4"' + (it2.dash ? ' stroke-dasharray="' + it2.dash + '"' : '') + '/>');
+        }
+        s.push('<text x="' + (lx + 18) + '" y="' + ly + '" font-size="11.5" fill="#334155">' + esc(it2.label) + '</text>');
       }
-      s.push('<text x="' + (lx + 18) + '" y="' + ly + '" font-size="11.5" fill="#334155">' + esc(it.label) + '</text>');
     }
 
     // hover guide (hidden initially)
@@ -3237,7 +3387,11 @@ table.data tr.assumed td { background: #fffbeb; }
       h += '<div class="diag-chart" id="' + (hostId || 'gofChart') + '"></div>';
       h += '<div class="legend-note">Each point is one measured concentration against the model\u2019s individual prediction at the same time. Points on the diagonal line = the model reproduces the sample. The shaded band is the \u00b12 SD measurement-noise range implied by the assay error model (open points = below LLOQ, handled as censored).</div>';
     }
-    h += '<table class="data diag-res"><thead><tr><th>Sample</th><th>Day</th><th>Date</th><th class="num">Observed</th><th class="num">Indiv. pred</th><th class="num">Rel. residual</th></tr></thead><tbody>';
+    // Found while verifying the phone/desktop chart work: this table had no
+    // scroll wrapper either (same gap as the trough and regimen-explorer
+    // tables), so it clipped silently inside the (narrow, scrollable)
+    // diagnostics modal on a phone. overflow-x:auto is inert for print.
+    h += '<div class="tbl-wrap"><table class="data diag-res"><thead><tr><th>Sample</th><th>Day</th><th>Date</th><th class="num">Observed</th><th class="num">Indiv. pred</th><th class="num">Rel. residual</th></tr></thead><tbody>';
     rows.forEach(function (r) {
       var lvl = r.lloq ? '' : relLevel(r.rel);
       h += '<tr class="res-row" data-obs-idx="' + r.i + '">' +
@@ -3251,7 +3405,7 @@ table.data tr.assumed td { background: #fffbeb; }
         '<td class="num">' + (r.lloq ? '—' : (isFinite(r.rel) ? (r.rel > 0 ? '+' : '') + Math.round(r.rel * 100) + '%' : '–')) + '</td>' +
         '</tr>';
     });
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
     h += '<div class="legend-note">Residual = (observed − predicted) / predicted. <span class="sk-ok">Green \u2264 30%</span> (within assay + model noise) · <span class="sk-warn">amber 30\u201360%</span> · <span class="sk-bad">red &gt; 60%</span> — a red residual flags a sample the model does not explain; check the dose history or sampling time first.</div>';
     return h;
   }
@@ -3984,13 +4138,27 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   // ----------------------------- chart ------------------------------------
-  function renderChart() {
+  /* v0.17.0 — phone/desktop chart layout. Charts stay one hand-built SVG
+   * string per render; the only new idea is that the caller now measures its
+   * OWN container and tells chart.js whether to lay out compact or wide,
+   * rather than drawing one wide layout and letting the browser scale it
+   * (which is what made phone chart text illegible before this). */
+  var PHONE_CHART_PX = 480;
+  function isCompactWidth(px) { return px > 0 && px < PHONE_CHART_PX; }
+
+  /* hostOverride: render into a different element than the live #chart div —
+   * used by generateReport() to build a guaranteed-desktop copy for print
+   * without disturbing whatever the clinician currently has on screen.
+   * forceCompact: true/false pins the layout regardless of container width
+   * (print always forces false); omitted, it auto-detects. */
+  function renderChart(hostOverride, forceCompact) {
     var fit = state.fit;
-    var host = $('chart');
+    var host = hostOverride || $('chart');
     if (!fit) {
-      host.innerHTML = '<div class="note">Enter the dosing schedule and press “Run forecast” to see the concentration–time plot.</div>';
+      if (!hostOverride) host.innerHTML = '<div class="note">Enter the dosing schedule and press “Run forecast” to see the concentration–time plot.</div>';
       return;
     }
+    var compact = forceCompact != null ? forceCompact : isCompactWidth(host.clientWidth);
     var rel = fit.rel;
     var grid = fit.grid;
     // chartBand/chartPriorBand continue the regimen past the last real dose
@@ -4079,6 +4247,7 @@ table.data tr.assumed td { background: #fffbeb; }
     }
 
     var cfg = {
+      compact: compact,
       xMin: xMin, xMax: xMax, yMax: yMax, yMin: yMin, logY: logY,
       futureFrom: rel.nowRel,
       xLabel: rel.ssMode ? 'Days since latest dose (day 0)' : 'Days since first dose',
@@ -4191,7 +4360,12 @@ table.data tr.assumed td { background: #fffbeb; }
     // troughs
     var thr = '';
     if (fit.troughs.length) {
-      thr = '<table class="data"><thead><tr>' +
+      // responsive-cards + data-label: see the note on intervalScanTableHtml
+      // — below the phone breakpoint this becomes label:value cards via CSS
+      // alone, no second markup path. Also newly wrapped in .tbl-wrap
+      // (found unwrapped, like the regimen-explorer table, while scoping the
+      // responsive work — neither table had a scroll fallback before this).
+      thr = '<div class="tbl-wrap"><table class="data responsive-cards"><thead><tr>' +
         '<th title="' + (rel.ssMode ? 'Day of treatment, where day 0 = the latest dose of the steady-state regimen (negative days = preceding cycles)' : 'Day of treatment since the first dose') + '">Day</th>' +
         '<th title="Calendar date of the trough">Date</th>' +
         '<th class="num" title="Median and 5th–95% range of the true (latent) trough concentration">Median trough [5–95%]</th>' +
@@ -4199,15 +4373,15 @@ table.data tr.assumed td { background: #fffbeb; }
       fit.troughs.forEach(function (tr) {
         var future = tr.t > rel.nowRel - 0.02;
         thr += '<tr class="' + (future ? '' : 'past') + (tr.assumed ? ' assumed' : '') + '">' +
-          '<td>' + fmtC(tr.t) + '</td>' +
-          '<td>' + fmtDate(rel.t0ms + tr.t * DAY) +
+          '<td data-label="Day">' + fmtC(tr.t) + '</td>' +
+          '<td data-label="Date">' + fmtDate(rel.t0ms + tr.t * DAY) +
           (tr.assumed ? ' <span class="tag-assumed" title="No dose was entered at this time. The app assumed the next administration falls one interval (q' +
             fmtDays(fit.interval) + ' d) after the last entered dose.">assumed dose</span>' : '') + '</td>' +
-          '<td class="num">' + fmtC(tr.med) + ' <span class="ci-range">[' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</span></td>' +
-          '<td class="num">' + ptaBadge(tr.pTarget, tr.pCI) + '</td>' +
+          '<td class="num" data-label="Median trough">' + fmtC(tr.med) + ' <span class="ci-range">[' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</span></td>' +
+          '<td class="num" data-label="P(&gt; target)">' + ptaBadge(tr.pTarget, tr.pCI) + '</td>' +
           '</tr>';
       });
-      thr += '</tbody></table>';
+      thr += '</tbody></table></div>';
       thr += '<div class="legend-note">Trough just before each dose · median [5–95%] is a <b>credible interval for the true concentration</b> (it does not include assay error, so a future measured value may fall outside it) · P = chance the true trough exceeds ' + state.target.value + ' µg/mL (hover a badge for details).</div>';
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
         thr += '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
@@ -4283,6 +4457,11 @@ table.data tr.assumed td { background: #fffbeb; }
    * from the button rendered next to the individual parameters. The content
    * is built lazily here (not on every fit render) since it's only needed if
    * the clinician actually opens it. */
+  /* The fit/rel the diagnostics modal is currently showing, if it's open —
+   * so a window resize can re-render it with the SAME data it was opened
+   * with, not whatever state.fit happens to be at that later moment. */
+  var diagOpenFit = null, diagOpenRel = null;
+
   function openDiagnostics(fit, rel) {
     var D = ECU.diagnostics;
     if (!D || !fit || !fit.obsData || !fit.obsData.length) return;
@@ -4292,16 +4471,24 @@ table.data tr.assumed td { background: #fffbeb; }
       '<h4 class="diag-h">This patient vs the population (EBEs)</h4>' +
       '<div class="diag-ebe">' + D.ebePanel(fit, M.drug()) + '</div>';
     openModal('diagModal', 'diagClose');
+    diagOpenFit = fit; diagOpenRel = rel;
     renderDiagnostics(fit, rel, 'diagModalGof', 'diagModalBody');
   }
 
-  function renderDiagnostics(fit, rel, hostId, rowsContainerId) {
+  /* forceCompact: print always passes false explicitly, so the report's own
+   * diagnostics chart is never affected by whatever width the clinician's
+   * window happens to be at print time (the report is a fixed A4 document,
+   * not a live view). Omitted, it auto-detects from the host's own width —
+   * used only by the live modal, whose width is genuinely worth adapting to. */
+  function renderDiagnostics(fit, rel, hostId, rowsContainerId, forceCompact) {
     var host = document.getElementById(hostId || 'gofChart');
     if (!host) return;
     var D = ECU.diagnostics;
     var cfg = D.gofChart(fit, M.drug());
     if (cfg) {
-      cfg.width = 560; cfg.height = 400;
+      var compact = forceCompact != null ? forceCompact : isCompactWidth(host.clientWidth);
+      cfg.compact = compact;
+      if (!compact) { cfg.width = 560; cfg.height = 400; }
       C.render(host, cfg);
       // hover sync: point <-> residual row. The container id is a parameter
       // (not hardcoded) so this works whether the residual rows live in the
@@ -4670,14 +4857,14 @@ table.data tr.assumed td { background: #fffbeb; }
     $('aboutClose').addEventListener('click', closeAbout);
     $('aboutModal').addEventListener('click', function (e) { if (e.target === $('aboutModal')) closeAbout(); });
 
-    var closeDiag = function () { closeModal('diagModal'); };
+    var closeDiag = function () { closeModal('diagModal'); diagOpenFit = null; diagOpenRel = null; };
     $('diagClose').addEventListener('click', closeDiag);
     $('diagModal').addEventListener('click', function (e) { if (e.target === $('diagModal')) closeDiag(); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
         if (!$('aboutModal').hidden) closeAbout();
         if (!$('reportModal').hidden) closeReportDialog();
-        if (!$('diagModal').hidden) closeModal('diagModal');
+        if (!$('diagModal').hidden) closeDiag();
         // the help popover closes (and re-syncs aria-expanded) in wireHelpPopovers' keydown handler
       }
     });
@@ -4711,6 +4898,26 @@ table.data tr.assumed td { background: #fffbeb; }
     // deliberate confirmation still prevents the most common data loss.
     window.addEventListener('beforeunload', function (e) {
       if (state.doses.length || state.obs.length) { e.preventDefault(); e.returnValue = ''; }
+    });
+    /* v0.17.0 — re-render the charts (not re-run the fit — these are pure
+     * string builders over the fit's already-computed draws) when the window
+     * is resized across the compact/desktop threshold, so rotating a tablet
+     * or resizing a browser window doesn't leave a chart drawn for the wrong
+     * width. Debounced: a drag-resize fires many times a second, and each
+     * re-render is cheap but not free. Deliberately does not touch
+     * state.stale — resizing after an edit must not silently clear a
+     * staleness warning the clinician hasn't actually resolved by re-running
+     * the fit (landmine flagged in the responsive plan). */
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        if (state.fit) renderChart();
+        if (state.fit && state.fit.intervalScan) renderIntervalScan();
+        if (!$('diagModal').hidden && diagOpenFit) {
+          renderDiagnostics(diagOpenFit, diagOpenRel, 'diagModalGof', 'diagModalBody');
+        }
+      }, 180);
     });
   }
 
@@ -4871,7 +5078,13 @@ table.data tr.assumed td { background: #fffbeb; }
     var nextTitle = byDose
       ? 'Trough after the first administration at this dose, before the following one — the earliest point a dose change can be seen'
       : 'Trough before the next administration, delayed to this interval';
-    var h = '<table class="' + (forPrint ? 'rp-table' : 'data') + ' iv-table"><thead><tr>' +
+    /* responsive-cards (screen only): below the phone breakpoint this table's
+     * rows become label:value cards via CSS alone (data-label -> ::before),
+     * not a second markup path — print keeps the plain <table> unaffected,
+     * since a printed page doesn't scroll and doesn't need the phone
+     * treatment. See src/app.css. */
+    var rowLabel = byDose ? 'Dose' : 'Interval';
+    var h = '<table class="' + (forPrint ? 'rp-table' : 'data responsive-cards') + ' iv-table"><thead><tr>' +
       '<th>' + (byDose ? 'Dose' : 'Interval') + '</th>' +
       '<th class="num" title="' + nextTitle + '">Next trough [5–95%]</th>' +
       '<th class="num">P(&gt; ' + tgt + ')</th>' +
@@ -4883,11 +5096,11 @@ table.data tr.assumed td { background: #fffbeb; }
       var isBase = Math.abs(val - sc.baseline) < (byDose ? 0.5 : 0.5);
       var label = byDose ? (fmtC(r.amt) + ' mg') : ('q' + fmtDays(r.interval) + 'd');
       h += '<tr class="' + (isBase ? 'iv-current' : '') + '">' +
-        '<td>' + label + (isBase ? ' <span class="tag-current">entered value</span>' : '') + '</td>' +
-        '<td class="num">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
-        '<td class="num">' + ptaBadge(r.next.pTarget) + '</td>' +
-        '<td class="num">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
-        '<td class="num">' + ptaBadge(r.ss.pTarget) + '</td>' +
+        '<td data-label="' + rowLabel + '">' + label + (isBase ? ' <span class="tag-current">entered value</span>' : '') + '</td>' +
+        '<td class="num" data-label="Next trough">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
+        '<td class="num" data-label="P(next &gt; target)">' + ptaBadge(r.next.pTarget) + '</td>' +
+        '<td class="num" data-label="Steady-state trough">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
+        '<td class="num" data-label="P(steady-state &gt; target)">' + ptaBadge(r.ss.pTarget) + '</td>' +
         '</tr>';
     });
     h += '</tbody></table>';
@@ -4910,6 +5123,8 @@ table.data tr.assumed td { background: #fffbeb; }
     var byDose = sc.mode === 'dose';
     var xs = sc.rows.map(function (r) { return byDose ? r.amt : r.interval; });
     var h = '';
+    var ivChartHost = document.getElementById('iv-out');
+    var compact = isCompactWidth(ivChartHost ? ivChartHost.clientWidth : 0);
 
     /* Only the steady-state curve is charted: "next" and "steady state" can
      * disagree sharply for a drug that accumulates, but two overlapping lines
@@ -4918,7 +5133,8 @@ table.data tr.assumed td { background: #fffbeb; }
      * is lost, only the graph is simplified. No candidate is ever highlighted
      * as preferred; only the entered (baseline) value is marked. */
     var cfg = {
-      width: 560, height: 260,
+      compact: compact,
+      width: compact ? undefined : 560, height: compact ? undefined : 260,
       xMin: xs[0], xMax: xs[xs.length - 1],
       yMin: 0, yMax: 100,
       xLabel: byDose ? 'Dose per administration (mg)' : 'Dosing interval (days)',
@@ -4939,7 +5155,13 @@ table.data tr.assumed td { background: #fffbeb; }
             'are listed in the table below the chart.'
     };
     h += '<div class="iv-chart" id="ivChart"></div>';
-    h += intervalScanTableHtml(sc, false);
+    /* v0.17.0 — this table had no scroll wrapper at all (unlike the dose and
+     * measurement tables), so it overflowed the viewport with no scroll
+     * affordance on a narrow phone. Wrapped here for the live view; the print
+     * copy (intervalScanTableHtml(scP, true) in reportHtml) deliberately
+     * stays unwrapped — overflow-x:auto is a screen concept, print has its
+     * own table-sizing rules. */
+    h += '<div class="tbl-wrap">' + intervalScanTableHtml(sc, false) + '</div>';
     h += noteHtml('This shows what the model predicts. It is not a recommendation — ' +
       'the choice of regimen, and the decision to act on it, remain yours. This exploration also prints in the report when generated.', 'info');
 
@@ -5100,7 +5322,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * copies shared one id, so only the on-screen one was ever filled and the
      * printed page showed an empty bordered box. */
     if (state.fit && state.fit.rel && state.fit.hasObs) {
-      try { renderDiagnostics(state.fit, state.fit.rel, 'rpGofChart', 'rpDiagBody'); } catch (e) { /* never block printing */ }
+      try { renderDiagnostics(state.fit, state.fit.rel, 'rpGofChart', 'rpDiagBody', false); } catch (e) { /* never block printing */ }
     }
     // give the browser a frame to lay out the sheet before print
     requestAnimationFrame(function () { window.print(); });
@@ -5254,8 +5476,21 @@ table.data tr.assumed td { background: #fffbeb; }
 
     // 4 — forecast (chart + trough table)
     h += '<h3 class="rp-h">Forecast</h3>';
-    var svgBox = typeof document !== 'undefined' ? document.getElementById('chart') : null;
-    var svg = svgBox ? svgBox.querySelector('svg') : null;
+    /* v0.17.0 — the report used to clone whatever SVG happened to be in the
+     * live #chart div, which after the phone/desktop chart work could be the
+     * compact phone layout if the clinician is printing from a narrow
+     * window. The printed page is a fixed A4 document, not a live view, so
+     * it must always get the desktop layout — rendered into a detached
+     * element here (never touching the live, possibly-compact, on-screen
+     * chart) and discarded once its SVG is harvested. */
+    var svg = null;
+    if (typeof document !== 'undefined' && state.fit) {
+      try {
+        var offscreenChart = document.createElement('div');
+        renderChart(offscreenChart, false);
+        svg = offscreenChart.querySelector('svg');
+      } catch (e) { svg = null; }
+    }
     h += '<div class="rp-chart">' + (svg ? svg.outerHTML : '<p class="rp-note">(chart not available)</p>') + '</div>';
     h += '<div class="rp-legend">Solid line: median predicted concentration · shaded band: 90% credible interval for the true concentration (residual assay error not included) · red points: measured concentrations · dashed horizontal line: trough target (' +
       st.target.value + ' µg/mL).</div>';
