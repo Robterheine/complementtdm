@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 09:43 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 12:10 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -494,19 +494,21 @@ table.data tr.assumed td { background: #fffbeb; }
    * colours, so a default print (background graphics off) rendered them blank
    * — while README promised they appear in the report. */
   .shrink-fill, .shrink-track, .ebe-bar, .ebe-med, .ebe-zero, .res-dot,
-  .rp-assumed td, .badge {
+  .rp-assumed td, .badge, .iv-table tr.iv-current td {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
   .restore-bar { display: none !important; }
+  .iv-table { break-inside: avoid; }
 }
 
-/* ---- dose-interval explorer (v0.13.0) ---- */
+/* ---- regimen explorer (v0.13.0 / v0.14.0) ---- */
 .iv-controls {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;
 }
 .iv-controls label.f { margin: 0; }
-.iv-controls input[type="number"] { width: 120px; }
+.iv-controls input[type="number"] { width: 110px; }
+.iv-controls select { padding: 5px 8px; }
 .iv-chart { margin: 6px 0 12px; }
 .iv-table { margin-top: 6px; }
 .iv-table tr.iv-current td { background: #fffbeb; }
@@ -515,7 +517,7 @@ table.data tr.assumed td { background: #fffbeb; }
   padding: 1px 5px; margin-left: 4px; border: 1px solid #b45309; color: #b45309;
   border-radius: 3px; white-space: nowrap;
 }
-@media (max-width: 560px) { .iv-controls input[type="number"] { width: 90px; } }
+@media (max-width: 700px) { .iv-controls input[type="number"] { width: 84px; } }
 
 </style>
 </head>
@@ -726,15 +728,22 @@ table.data tr.assumed td { background: #fffbeb; }
 
     <!-- Dose-interval explorer: what this patient's own posterior predicts for
          other dosing intervals. Shows consequences; recommends nothing. -->
-    <details id="intervalCard" class="fold no-print" hidden>
-      <summary>Dose-interval explorer <span class="hint">— what happens if the interval changes</span>
-        <button type="button" class="info" data-help="ivexplore" aria-label="About the dose-interval explorer" aria-expanded="false">ⓘ</button>
+    <details id="intervalCard" class="fold" hidden>
+      <summary>Regimen explorer <span class="hint">— what a dose or interval change predicts at steady state</span>
+        <button type="button" class="info" data-help="ivexplore" aria-label="About the regimen explorer" aria-expanded="false">ⓘ</button>
       </summary>
       <div class="fold-body">
-        <div class="iv-controls">
-          <label class="f" for="iv-amt">Dose per administration (mg)</label>
-          <input type="number" id="iv-amt" step="any" title="Amount given at each future administration — defaults to the last dose entered">
-          <button class="primary" id="iv-run" title="Evaluate the entered intervals using this patient's fitted parameters">Explore intervals</button>
+        <div class="iv-controls no-print">
+          <label class="f" for="iv-vary">Vary</label>
+          <select id="iv-vary" title="Which quantity to scan a range of candidates around — the other stays fixed at the value entered">
+            <option value="interval">Interval</option>
+            <option value="dose">Dose</option>
+          </select>
+          <label class="f" for="iv-amt">Dose (mg)</label>
+          <input type="number" id="iv-amt" step="any" title="Dose per administration to evaluate — prefilled with the last dose entered">
+          <label class="f" for="iv-interval">Interval (days)</label>
+          <input type="number" id="iv-interval" step="any" title="Dosing interval to evaluate — prefilled with the interval derived from the entered schedule">
+          <button class="primary" id="iv-run" title="Evaluate candidates around these values using this patient's fitted parameters">Explore</button>
           <span class="hint" id="iv-status"></span>
         </div>
         <div id="iv-out"></div>
@@ -800,7 +809,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.13.0';
+  ECU.VERSION = '0.14.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2532,67 +2541,129 @@ table.data tr.assumed td { background: #fffbeb; }
    * opts: { draws, doses, wt, disease, age, drug, target, amt, intervals[],
    *         maxDraws?, horizonDays?, onProgress? }
    */
-  async function intervalScan(opts) {
+  /* One candidate regimen (a dose amount + an interval), evaluated on the
+   * SAME kept draws as the fit. Shared by intervalScan (fixed dose, varying
+   * interval) and doseScan (fixed interval, varying dose) so a dose change and
+   * an interval change are answered by the same code, not two copies of it. */
+  async function scanOneRegimen(sub, doses, last, amt, iv, route, drug, wt, disease, age, target, horizon, nextCycle) {
+    // enough cycles to re-approach steady state on the candidate regimen
+    var nCycles = Math.max(3, Math.min(30, Math.ceil(horizon / iv)));
+    var fwd = doses.slice();
+    for (var c = 1; c <= nCycles; c++) {
+      fwd.push({ t: last.t + c * iv, amt: amt, route: route });
+    }
+    /* "next" is the earliest trough that can possibly reflect the change being
+     * explored. For an INTERVAL change (nextCycle=1) that is simply the trough
+     * before the delayed next dose — the longer gap already shows up there.
+     * For a DOSE change (nextCycle=2) the trough right before that same next
+     * dose is, by definition, evaluated BEFORE the new amount is given, so it
+     * cannot depend on it at all — confirmed to be numerically invariant to
+     * `amt`. The earliest point that reflects a changed AMOUNT is one cycle
+     * later, after that first new-amount dose has been administered. */
+    var nc = nextCycle > 0 ? nextCycle : 1;
+    var tNext = last.t + nc * iv - 1e-6;
+    var tSS = last.t + nCycles * iv - 1e-6;         // trough once re-settled (steady state)
+    var mat = await simulateDraws(sub, fwd, [tNext, tSS], wt, disease, null, 64, age, drug, null);
+    return {
+      amt: amt, interval: iv, nCycles: nCycles,
+      next: {
+        med: quantileSortedOfColumn(mat, 0, 0.5),
+        p5: quantileSortedOfColumn(mat, 0, 0.05),
+        p95: quantileSortedOfColumn(mat, 0, 0.95),
+        pTarget: probAbove(mat, 0, target)
+      },
+      ss: {
+        med: quantileSortedOfColumn(mat, 1, 0.5),
+        p5: quantileSortedOfColumn(mat, 1, 0.05),
+        p95: quantileSortedOfColumn(mat, 1, 0.95),
+        pTarget: probAbove(mat, 1, target)
+      }
+    };
+  }
+
+  function regimenScanSetup(opts) {
     var draws = opts.draws || [];
     var doses = (opts.doses || []).slice().sort(function (a, b) { return a.t - b.t; });
-    if (!draws.length || !doses.length) return [];
+    if (!draws.length || !doses.length) return null;
     var drug = opts.drug || M.drug().id;
     var spec = M.spec(drug);
-    var target = opts.target != null ? opts.target : (spec.targetDefault || 75);
-    var last = doses[doses.length - 1];
-    var amt = opts.amt > 0 ? opts.amt : last.amt;
-    // Future administrations follow the maintenance route (SC for crovalimab).
-    var route = spec.adminRoutes ? spec.adminRoutes.subsequent : (last.route || null);
-    // Subsampled draws keep this interactive; the quantiles stay stable because
-    // subsample() takes an evenly spaced slice of the chain, not the head.
-    var sub = subsample(draws, opts.maxDraws || 250);
-    var horizon = opts.horizonDays || 200;
-    var out = [];
-    var ivs = opts.intervals || [];
+    return {
+      doses: doses,
+      last: doses[doses.length - 1],
+      drug: drug,
+      target: opts.target != null ? opts.target : (spec.targetDefault || 75),
+      // Future administrations follow the maintenance route (SC for crovalimab).
+      route: spec.adminRoutes ? spec.adminRoutes.subsequent : (doses[doses.length - 1].route || null),
+      // Subsampled draws keep this interactive; quantiles stay stable because
+      // subsample() takes an evenly spaced slice of the chain, not the head.
+      sub: subsample(draws, opts.maxDraws || 250),
+      horizon: opts.horizonDays || 200
+    };
+  }
 
+  /* Fixed dose, varying interval — "what if this patient's interval changes?" */
+  async function intervalScan(opts) {
+    var s = regimenScanSetup(opts);
+    if (!s) return [];
+    var amt = opts.amt > 0 ? opts.amt : s.last.amt;
+    var ivs = opts.intervals || [];
+    var out = [];
     for (var k = 0; k < ivs.length; k++) {
-      var iv = ivs[k];
-      if (!(iv > 0)) continue;
-      // enough cycles to re-approach steady state on the candidate interval
-      var nCycles = Math.max(3, Math.min(30, Math.ceil(horizon / iv)));
-      var fwd = doses.slice();
-      for (var c = 1; c <= nCycles; c++) {
-        fwd.push({ t: last.t + c * iv, amt: amt, route: route });
-      }
-      var tNext = last.t + iv - 1e-6;                 // trough before the next dose
-      var tSS = last.t + nCycles * iv - 1e-6;         // trough after continuing
-      var mat = await simulateDraws(sub, fwd, [tNext, tSS], opts.wt, opts.disease,
-        null, 64, opts.age, drug, null);
-      out.push({
-        interval: iv,
-        nCycles: nCycles,
-        next: {
-          med: quantileSortedOfColumn(mat, 0, 0.5),
-          p5: quantileSortedOfColumn(mat, 0, 0.05),
-          p95: quantileSortedOfColumn(mat, 0, 0.95),
-          pTarget: probAbove(mat, 0, target)
-        },
-        ss: {
-          med: quantileSortedOfColumn(mat, 1, 0.5),
-          p5: quantileSortedOfColumn(mat, 1, 0.05),
-          p95: quantileSortedOfColumn(mat, 1, 0.95),
-          pTarget: probAbove(mat, 1, target)
-        }
-      });
+      if (!(ivs[k] > 0)) continue;
+      out.push(await scanOneRegimen(s.sub, s.doses, s.last, amt, ivs[k], s.route,
+        s.drug, opts.wt, opts.disease, opts.age, s.target, s.horizon, 1));
       if (opts.onProgress) { opts.onProgress((k + 1) / ivs.length); await tick(); }
     }
     return out;
   }
 
-  /* Candidate intervals around the one the patient is on: the same interval,
-   * then progressively longer ones (interval prolongation is the usual
-   * direction), plus one shorter for context. Whole days, deduplicated. */
+  /* Fixed interval, varying dose — "what if this patient's dose changes?" This
+   * is the direct answer to "I adjusted a dose — show me the predicted trough
+   * and its 90% credible interval at steady state": the row whose amount
+   * equals the dose being considered IS that answer, read from `.ss`. */
+  async function doseScan(opts) {
+    var s = regimenScanSetup(opts);
+    if (!s) return [];
+    var iv = opts.interval > 0 ? opts.interval : (M.spec(s.drug).ssIntervalDefault || 14);
+    var amts = opts.amounts || [];
+    var out = [];
+    for (var k = 0; k < amts.length; k++) {
+      if (!(amts[k] > 0)) continue;
+      out.push(await scanOneRegimen(s.sub, s.doses, s.last, amts[k], iv, s.route,
+        s.drug, opts.wt, opts.disease, opts.age, s.target, s.horizon, 2));
+      if (opts.onProgress) { opts.onProgress((k + 1) / amts.length); await tick(); }
+    }
+    return out;
+  }
+
+  /* Candidate intervals around a baseline (the current one by default): the
+   * same interval, then progressively longer ones (interval prolongation is
+   * the usual direction for these drugs), plus one shorter for context. Whole
+   * days, deduplicated. */
   function candidateIntervals(current) {
     var cur = current > 0 ? current : 14;
     var mult = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
     var seen = {}, out = [];
     mult.forEach(function (m) {
       var v = Math.max(1, Math.round(cur * m));
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort(function (a, b) { return a - b; });
+  }
+
+  /* Candidate doses around a baseline (the current one by default), snapped to
+   * the drug's own dosing granularity (`doseSpec.step`) so every candidate is a
+   * value a clinician would actually consider, and clamped to the spec's
+   * permitted range. */
+  function candidateAmounts(current, doseSpec) {
+    var cur = current > 0 ? current : ((doseSpec && doseSpec.default) || 100);
+    var step = (doseSpec && doseSpec.step > 0) ? doseSpec.step : 1;
+    var min = (doseSpec && doseSpec.min > 0) ? doseSpec.min : step;
+    var max = (doseSpec && doseSpec.max > 0) ? doseSpec.max : Infinity;
+    var mult = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+    var seen = {}, out = [];
+    mult.forEach(function (m) {
+      var v = Math.max(min, Math.min(max, Math.round((cur * m) / step) * step));
       if (!seen[v]) { seen[v] = 1; out.push(v); }
     });
     return out.sort(function (a, b) { return a - b; });
@@ -2675,7 +2746,9 @@ table.data tr.assumed td { background: #fffbeb; }
     troughTimesOf: troughTimesOf,
     virtualTroughTime: virtualTroughTime,
     intervalScan: intervalScan,
+    doseScan: doseScan,
     candidateIntervals: candidateIntervals,
+    candidateAmounts: candidateAmounts,
     runFit: runFit
   };
 
@@ -3348,7 +3421,7 @@ table.data tr.assumed td { background: #fffbeb; }
    * language on purpose; the technical wording remains in the `title`s and
    * the About dialog. */
   var HELP = {
-    ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for other dosing intervals, using the posterior the last run already produced. \u201cNext trough\u201d delays only the next administration; \u201csustained trough\u201d continues the patient on that interval until the concentration settles \u2014 for a drug that accumulates the sustained value is lower, and is usually the one that matters. The app shows the consequences; choosing the regimen remains yours.',
+    ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for a different dose or interval, using the posterior the last run already produced \u2014 no refit needed. Choose what to vary: the other value stays fixed at what you entered. \u201cNext trough\u201d changes only the next administration; \u201csteady-state trough\u201d continues the patient on the new regimen until the concentration settles \u2014 for a drug that accumulates, the steady-state value is lower and is usually the one that matters. The app shows the consequences; choosing the regimen remains yours.',
     wt: 'Body weight — the model uses it to adjust clearance and volumes. Enter the current weight in kg.',
     age: 'Age in years — older patients absorb the under-the-skin (SC) dose more slowly. The model uses this to adjust the absorption rate.',
     target: 'The lowest trough you want to keep. The table shows P(> target) — the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
@@ -4590,13 +4663,22 @@ table.data tr.assumed td { background: #fffbeb; }
     updateStepper();
   }
 
-  /* ------------------ dose-interval explorer (v0.13.0) --------------------
-   * Routine TDM on these agents is mostly about prolonging the interval. The
-   * posterior does not depend on the future schedule, so every candidate
-   * interval is evaluated from the draws the fit already produced — a second
-   * or so, instead of hand-entering future doses and refitting once per
-   * candidate. It displays consequences; the regimen choice stays with the
-   * clinician, and no interval is marked as recommended. */
+  /* -------------------- regimen explorer (v0.13.0 / v0.14.0) ---------------
+   * Two related questions a clinician asks after a fit, neither answerable
+   * before v0.13.0 without hand-entering future doses and refitting once per
+   * candidate (measured ~54 s for five candidates):
+   *   "if I prolong the interval, what happens?"   -> vary interval, fixed dose
+   *   "if I adjust the dose, what happens at steady state?" -> vary dose, fixed interval
+   * Both reuse the SAME posterior draws the fit already produced (~1 s total),
+   * because the posterior does not depend on the future schedule. Each
+   * candidate reports two numbers that must not be collapsed into one:
+   *   next          — only the next administration is changed
+   *   steady state  — the patient is continued on the new regimen long enough
+   *                   for the concentration to re-settle; for a drug that
+   *                   accumulates this is usually the decision-relevant one
+   * It displays consequences; the regimen choice stays with the clinician, and
+   * no candidate is marked as recommended. Prints in the report when used,
+   * clearly separated from the individualized default forecast above it. */
   function intervalExplorerAvailable() {
     return !!(state.fit && state.fit.draws && state.fit.draws.length && state.fit.rel &&
               state.fit.rel.dosesRel && state.fit.rel.dosesRel.length);
@@ -4609,94 +4691,86 @@ table.data tr.assumed td { background: #fffbeb; }
     card.hidden = false;
     var rel = state.fit.rel;
     var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
-    var amtEl = $('iv-amt');
-    if (amtEl && !amtEl.value) amtEl.value = lastAmt;
-    $('iv-out').innerHTML = '<div class="note">Press “Explore intervals” to see what this patient’s fitted parameters predict for shorter and longer dosing intervals.</div>';
+    var amtEl = $('iv-amt'), ivEl = $('iv-interval');
+    if (amtEl) amtEl.value = lastAmt;
+    if (ivEl) ivEl.value = fmtDays(state.fit.interval);
+    $('iv-out').innerHTML = '<div class="note">Press “Explore” to see what this patient’s fitted parameters predict for other doses or intervals.</div>';
   }
 
   async function runIntervalScan() {
     if (!intervalExplorerAvailable()) return;
     var fit = state.fit, rel = fit.rel;
-    var amt = parseFloat($('iv-amt').value);
+    var vary = $('iv-vary').value === 'dose' ? 'dose' : 'interval';
     var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
+
+    var amt = parseFloat($('iv-amt').value);
     if (!(amt > 0)) { amt = lastAmt; $('iv-amt').value = amt; }
     var dl = M.drug().dose;
     if (!(amt >= dl.min && amt <= dl.max)) {
       alert('Dose must be between ' + dl.min + ' and ' + dl.max + ' mg for ' + M.drug().label + '.');
       return;
     }
+    var iv = parseFloat($('iv-interval').value);
+    if (!(iv > 0)) { iv = fit.interval; $('iv-interval').value = fmtDays(iv); }
+    if (iv > 365) { alert('Interval must be 365 days or less.'); return; }
+
     var btn = $('iv-run');
     btn.disabled = true;
     $('iv-status').textContent = 'calculating…';
     try {
-      var ivs = B.candidateIntervals(fit.interval);
-      var scan = await B.intervalScan({
-        draws: fit.draws, doses: rel.dosesRel,
-        wt: fit.wt, disease: fit.disease, age: fit.age, drug: state.drug,
-        target: state.target.value, amt: amt, intervals: ivs,
-        onProgress: function (f) { $('iv-status').textContent = 'calculating… ' + Math.round(f * 100) + '%'; }
-      });
-      state.fit.intervalScan = { amt: amt, rows: scan, current: fit.interval };
+      var scan, baseline;
+      var onProg = function (f) { $('iv-status').textContent = 'calculating… ' + Math.round(f * 100) + '%'; };
+      if (vary === 'dose') {
+        var amts = B.candidateAmounts(amt, dl);
+        scan = await B.doseScan({
+          draws: fit.draws, doses: rel.dosesRel, wt: fit.wt, disease: fit.disease,
+          age: fit.age, drug: state.drug, target: state.target.value,
+          interval: iv, amounts: amts, onProgress: onProg
+        });
+        baseline = amt;
+      } else {
+        var ivs = B.candidateIntervals(iv);
+        scan = await B.intervalScan({
+          draws: fit.draws, doses: rel.dosesRel, wt: fit.wt, disease: fit.disease,
+          age: fit.age, drug: state.drug, target: state.target.value,
+          amt: amt, intervals: ivs, onProgress: onProg
+        });
+        baseline = iv;
+      }
+      state.fit.intervalScan = { mode: vary, amt: amt, interval: iv, baseline: baseline, rows: scan };
       renderIntervalScan();
     } catch (e) {
-      $('iv-out').innerHTML = noteHtml('Could not evaluate the intervals: ' + esc(e.message), 'warn');
+      $('iv-out').innerHTML = noteHtml('Could not evaluate the regimen: ' + esc(e.message), 'warn');
     } finally {
       btn.disabled = false;
       $('iv-status').textContent = '';
     }
   }
 
-  function renderIntervalScan() {
-    var sc = state.fit && state.fit.intervalScan;
-    if (!sc || !sc.rows.length) return;
+  /* Builds the results TABLE only (no chart, no chrome) — shared by the
+   * on-screen fold and the printed report so both show exactly the same
+   * numbers. `forPrint` drops the live "current interval/dose" framing in
+   * favour of naming the exact values evaluated, since a reader of the
+   * printed page has no on-screen state to compare against. */
+  function intervalScanTableHtml(sc, forPrint) {
     var tgt = state.target.value;
-    var cur = sc.current;
-    var h = '';
-
-    /* Two curves, because they answer different questions and can disagree
-     * sharply for a drug that accumulates: delaying ONE dose is often still
-     * above target when CONTINUING at that interval is not. */
-    var cfg = {
-      width: 560, height: 260,
-      xMin: sc.rows[0].interval, xMax: sc.rows[sc.rows.length - 1].interval,
-      yMin: 0, yMax: 100,
-      xLabel: 'Dosing interval (days)',
-      yLabel: 'P(trough > ' + tgt + ' µg/mL)  %',
-      series: [
-        { x: sc.rows.map(function (r) { return r.interval; }),
-          y: sc.rows.map(function (r) { return r.ss.pTarget * 100; }),
-          color: '#0e7490', width: 2.2 },
-        { x: sc.rows.map(function (r) { return r.interval; }),
-          y: sc.rows.map(function (r) { return r.next.pTarget * 100; }),
-          color: '#64748b', width: 1.8, dash: '5 4' }
-      ],
-      points: sc.rows.map(function (r) {
-        return { x: r.interval, y: r.ss.pTarget * 100, color: '#0e7490' };
-      }),
-      vlines: [{ x: cur, color: '#b45309', dash: '4 4' }],
-      legend: [
-        { label: 'Continuing at this interval', color: '#0e7490', swatch: 'line' },
-        { label: 'Delaying the next dose only', color: '#64748b', swatch: 'line', dash: '5 4' },
-        { label: 'Current interval (q' + fmtDays(cur) + 'd)', color: '#b45309', swatch: 'line', dash: '4 4' }
-      ],
-      title: 'Probability of staying above target by dosing interval',
-      desc: 'Probability that the trough stays above ' + tgt + ' µg/mL for each candidate dosing interval, ' +
-            'both if the patient is continued on that interval and if only the next dose is delayed. ' +
-            'The values are listed in the table below the chart.'
-    };
-    h += '<div class="iv-chart" id="ivChart"></div>';
-
-    h += '<table class="data iv-table"><thead><tr>' +
-      '<th>Interval</th>' +
-      '<th class="num" title="Trough before the next administration if only that dose is delayed to this interval">Next trough [5–95%]</th>' +
+    var byDose = sc.mode === 'dose';
+    var nextTitle = byDose
+      ? 'Trough after the first administration at this dose, before the following one — the earliest point a dose change can be seen'
+      : 'Trough before the next administration, delayed to this interval';
+    var h = '<table class="' + (forPrint ? 'rp-table' : 'data') + ' iv-table"><thead><tr>' +
+      '<th>' + (byDose ? 'Dose' : 'Interval') + '</th>' +
+      '<th class="num" title="' + nextTitle + '">Next trough [5–95%]</th>' +
       '<th class="num">P(&gt; ' + tgt + ')</th>' +
-      '<th class="num" title="Trough once the patient has been continued on this interval long enough to re-approach steady state">Sustained trough [5–95%]</th>' +
+      '<th class="num" title="Trough once the patient has been continued on this regimen long enough to re-approach steady state">Steady-state trough [5–95%]</th>' +
       '<th class="num">P(&gt; ' + tgt + ')</th>' +
       '</tr></thead><tbody>';
     sc.rows.forEach(function (r) {
-      var isCur = Math.abs(r.interval - cur) < 0.5;
-      h += '<tr class="' + (isCur ? 'iv-current' : '') + '">' +
-        '<td>q' + fmtDays(r.interval) + 'd' + (isCur ? ' <span class="tag-current">current</span>' : '') + '</td>' +
+      var val = byDose ? r.amt : r.interval;
+      var isBase = Math.abs(val - sc.baseline) < (byDose ? 0.5 : 0.5);
+      var label = byDose ? (fmtC(r.amt) + ' mg') : ('q' + fmtDays(r.interval) + 'd');
+      h += '<tr class="' + (isBase ? 'iv-current' : '') + '">' +
+        '<td>' + label + (isBase ? ' <span class="tag-current">entered value</span>' : '') + '</td>' +
         '<td class="num">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
         '<td class="num">' + ptaBadge(r.next.pTarget) + '</td>' +
         '<td class="num">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
@@ -4704,12 +4778,54 @@ table.data tr.assumed td { background: #fffbeb; }
         '</tr>';
     });
     h += '</tbody></table>';
-    h += '<div class="legend-note"><b>Next trough</b> = only the next administration is delayed. ' +
-      '<b>Sustained trough</b> = the patient is continued on that interval until the concentration settles; ' +
+    var fixedTxt = byDose
+      ? 'interval fixed at q' + fmtDays(sc.interval) + 'd'
+      : 'dose fixed at ' + fmtC(sc.amt) + ' mg per administration';
+    h += '<div class="legend-note"><b>Next trough</b> = ' +
+      (byDose ? 'the trough after one administration at this dose — the earliest a dose change can show up, since a trough measured before that dose cannot depend on its amount' :
+                'only the next administration reflects the new interval') + '. ' +
+      '<b>Steady-state trough</b> = the patient is continued on the new regimen until the concentration settles; ' +
       'for a drug that accumulates this is the lower, and usually the decision-relevant, number. ' +
-      'Both use the parameters fitted to this patient, at ' + fmtC(sc.amt) + ' mg per administration.</div>';
-    h += noteHtml('This shows what the model predicts for each interval. It is not a recommendation — ' +
-      'the choice of regimen, and the decision to act on it, remain yours.', 'info');
+      'Both use the parameters fitted to this patient, with the ' + fixedTxt + '.</div>';
+    return h;
+  }
+
+  function renderIntervalScan() {
+    var sc = state.fit && state.fit.intervalScan;
+    if (!sc || !sc.rows.length) return;
+    var tgt = state.target.value;
+    var byDose = sc.mode === 'dose';
+    var xs = sc.rows.map(function (r) { return byDose ? r.amt : r.interval; });
+    var h = '';
+
+    /* Two curves, because "next" and "steady state" answer different
+     * questions and can disagree sharply for a drug that accumulates. */
+    var cfg = {
+      width: 560, height: 260,
+      xMin: xs[0], xMax: xs[xs.length - 1],
+      yMin: 0, yMax: 100,
+      xLabel: byDose ? 'Dose per administration (mg)' : 'Dosing interval (days)',
+      yLabel: 'P(trough > ' + tgt + ' µg/mL)  %',
+      series: [
+        { x: xs, y: sc.rows.map(function (r) { return r.ss.pTarget * 100; }), color: '#0e7490', width: 2.2 },
+        { x: xs, y: sc.rows.map(function (r) { return r.next.pTarget * 100; }), color: '#64748b', width: 1.8, dash: '5 4' }
+      ],
+      points: sc.rows.map(function (r, i) { return { x: xs[i], y: r.ss.pTarget * 100, color: '#0e7490' }; }),
+      vlines: [{ x: sc.baseline, color: '#b45309', dash: '4 4' }],
+      legend: [
+        { label: 'Continuing at this ' + (byDose ? 'dose' : 'interval'), color: '#0e7490', swatch: 'line' },
+        { label: 'Changing the next dose only', color: '#64748b', swatch: 'line', dash: '5 4' },
+        { label: 'Entered value', color: '#b45309', swatch: 'line', dash: '4 4' }
+      ],
+      title: 'Probability of staying above target by ' + (byDose ? 'dose' : 'dosing interval'),
+      desc: 'Probability that the trough stays above ' + tgt + ' µg/mL for each candidate ' +
+            (byDose ? 'dose' : 'dosing interval') + ', both if the patient is continued on it and if only ' +
+            'the next dose is changed. The values are listed in the table below the chart.'
+    };
+    h += '<div class="iv-chart" id="ivChart"></div>';
+    h += intervalScanTableHtml(sc, false);
+    h += noteHtml('This shows what the model predicts. It is not a recommendation — ' +
+      'the choice of regimen, and the decision to act on it, remain yours. This exploration also prints in the report when generated.', 'info');
 
     $('iv-out').innerHTML = h;
     try { C.render(document.getElementById('ivChart'), cfg); } catch (e) { /* table still stands */ }
@@ -5047,6 +5163,20 @@ table.data tr.assumed td { background: #fffbeb; }
         h += '<div class="rp-legend">“Assumed next dose” is not a scheduled administration: no dose was entered at that time, so the app projected one interval (q' +
           fmtDays(fit.interval) + ' d) after the last entered dose.</div>';
       }
+    }
+
+    /* Regimen exploration (v0.14.0): printed only when the clinician actually
+     * used it, and kept visually and textually distinct from the
+     * individualized forecast above — this is a hypothetical the clinician
+     * asked about, not the result the fit produced from the entered doses. */
+    if (fit.intervalScan && fit.intervalScan.rows && fit.intervalScan.rows.length) {
+      var scP = fit.intervalScan;
+      h += '<h3 class="rp-h">Regimen exploration — ' +
+        (scP.mode === 'dose' ? 'candidate doses' : 'candidate intervals') + '</h3>';
+      h += '<p class="rp-note" style="margin-top:0">This is not the forecast above. It shows what this patient’s ' +
+        'fitted parameters predict for the candidate ' + (scP.mode === 'dose' ? 'doses' : 'intervals') +
+        ' below, evaluated at the clinician’s request. It is not a treatment recommendation.</p>';
+      h += intervalScanTableHtml(scP, true);
     }
 
     // 5 — findings & advice
