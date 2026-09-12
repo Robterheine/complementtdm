@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 21:09 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 21:28 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -797,9 +797,9 @@ table.data tr.assumed td { background: #fffbeb; }
         </div>
         <select id="pt-recency" title="Optional: give older measurements a larger residual error, so they influence the individual fit less than recent ones. Off by default.">
           <option value="off">Off — all samples weighted equally</option>
-          <option value="low">Low — slow decay (τ = 1095 days)</option>
-          <option value="medium">Medium — τ = 365 days</option>
-          <option value="high">High — fast decay (τ = 122 days)</option>
+          <option value="low">Low — residual error up to ×1.5 for older samples</option>
+          <option value="medium">Medium — up to ×2</option>
+          <option value="high">High — up to ×3</option>
         </select>
         <div class="legend-note" id="recencyHint"></div>
       </div>
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.20.0';
+  ECU.VERSION = '0.21.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1657,36 +1657,52 @@ table.data tr.assumed td { background: #fffbeb; }
     return (b * e0 * e0 - 2 * c * e0 * e1 + a * e1 * e1) / det;
   }
 
-  /* Time-dependent recency weighting (v0.20.0) -----------------------------
+  /* Time-dependent recency weighting (v0.21.0) -----------------------------
    *
    * An optional, off-by-default advanced fitting option: older concentrations
-   * get an inflated PROPORTIONAL residual error, so they pull the individual
-   * fit less than recent ones. Rationale: between-occasion variability means a
-   * sample drawn several occasions ago reflects a clearance realisation that
-   * has partly decorrelated from the patient's current one, so part of its
-   * apparent misfit is drift rather than measurement error.
+   * are given a larger residual error, so they pull the individual fit less
+   * than recent ones. Rationale: a measurement describes the patient as they
+   * were on the day it was drawn, and the further back that is, the less well
+   * it describes them now — partly drift in the patient, partly a dosing
+   * history that is less reliably documented the further back one looks.
    *
-   * The extra variance is  omega2_IOV * (1 - exp(-age/tau)) * pred^2, i.e. it
-   * starts at exactly zero for the newest sample and SATURATES at the drug's
-   * own published between-occasion variance — an old sample is discounted, but
-   * never discarded. The ceiling therefore comes from the model, not from a
-   * chosen constant; only tau (how fast the discount is reached) is a setting.
+   * This is a statement about SIGMA and nothing else. It is exactly the
+   * existing assay-error multiplier (errMult) made time-dependent: the same
+   * uniform scaling of the residual SD, applied per observation according to
+   * its age rather than once for the whole assay. It therefore applies to
+   * every drug and every disease, needs nothing from the model's random-effect
+   * structure, and is entirely independent of whether a given model happens to
+   * estimate between-occasion variability (which is an OMEGA term).
    *
-   * tau presets, in days. LOW = weak discounting = slow decay = LONG tau.
-   * Spacing is x3 with round clinical units (3 years / 1 year / 4 months);
-   * at 3 months these add roughly 12% / 16% / 24% CV on top of the assay
-   * error. Note the direction: the source model's IOV is exchangeable between
-   * occasions, so a SHORT tau is the reading closest to the publication and
-   * every tau > 0 asserts more persistence than the paper itself contains.
+   *   SD_i = SD_base(pred_i) * errMult * m(age_i)
+   *   m(age) = 1 + (Mmax - 1) * (1 - exp(-age / TAU))
    *
-   * tau is never estimated from the patient's own data (N is typically 1-4;
-   * it is unidentifiable there, and a free inflation parameter would simply be
-   * driven up until the residuals vanished). It is a deterministic function of
-   * each sample's age, so the log-variance term below stays constant in eta. */
-  var RECENCY_TAU = { off: 0, low: 1095, medium: 365, high: 122 };
-  function recencyTau(preset) {
-    var v = RECENCY_TAU[preset];
-    return typeof v === 'number' && isFinite(v) && v > 0 ? v : 0;
+   * m(0) = 1 exactly: the newest sample is never inflated. m saturates at
+   * Mmax, so an old sample is down-weighted but never discarded. Because the
+   * multiplier is applied to the SD, a sample's relative weight in the fit is
+   * exactly 1/m^2 -- independent of its concentration, which makes it easy to
+   * state and easy to audit.
+   *
+   * The preset sets Mmax, i.e. HOW MUCH the residual error grows; the time
+   * constant is shared, so all three tiers have the same shape and differ only
+   * in strength. Neither Mmax nor TAU is estimated from the patient's own data
+   * (with the handful of samples a real case carries neither is identifiable,
+   * and a free inflation parameter would simply be driven up until the
+   * residuals vanished); both are deterministic functions of a sample's age,
+   * so the log-variance term below stays constant in eta. */
+  var RECENCY_TAU_DAYS = 365;
+  var RECENCY_MAX = { off: 1, low: 1.5, medium: 2, high: 3 };
+
+  function recencyMaxMult(preset) {
+    var v = RECENCY_MAX[preset];
+    return typeof v === 'number' && isFinite(v) && v >= 1 ? v : 1;
+  }
+
+  /* Residual-SD multiplier for a sample of the given age, in days. */
+  function recencyMult(preset, ageDays) {
+    var mx = recencyMaxMult(preset);
+    if (mx <= 1 || !(ageDays > 0)) return 1;
+    return 1 + (mx - 1) * (1 - Math.exp(-ageDays / RECENCY_TAU_DAYS));
   }
 
   /* ctx: { wt, age?, disease, drug?, doses, obs:[{t,c,lloq}], lloq,
@@ -1707,20 +1723,16 @@ table.data tr.assumed td { background: #fffbeb; }
     var rtol = ctx.rtol != null ? ctx.rtol : 1e-6;
     var lloq = ctx.lloq || 0;
     var errMult = ctx.errMult != null && ctx.errMult > 0 ? ctx.errMult : 1;
-    var mult2 = errMult * errMult;
     var dims = (ctx.omega && ctx.omega.dims) || 2;
-    /* Per-observation recency inflation, precomputed: it depends only on each
-     * sample's AGE, never on eta, so it is constant across the whole search.
-     * Age is measured from the newest fitted sample (obs is sorted above), not
-     * from the wall clock: a session must refit to the same numbers tomorrow,
-     * and a report must be reproducible from its own JSON export. Zero when
-     * the option is off, and zero for every drug/disease whose model has no
-     * between-occasion term (everything except eculizumab/aHUS). */
-    var recTau = recencyTau(ctx.recency);
-    var iovVar = recTau > 0 ? M.iovVar(ctx.disease, ctx.drug) : 0;
+    /* Per-observation residual-SD multiplier, precomputed: it depends only on
+     * each sample's AGE, never on eta, so it is constant across the whole
+     * search. Age is measured from the newest fitted sample (obs is sorted
+     * above), not from the wall clock: a session must refit to the same
+     * numbers tomorrow, and a report must be reproducible from its own JSON
+     * export. Folds errMult in, since the two do the same thing. */
     var tNewest = times.length ? times[times.length - 1] : 0;
-    var ageInfl = obs.map(function (o) {
-      return iovVar > 0 ? iovVar * (1 - Math.exp(-(tNewest - o.t) / recTau)) : 0;
+    var multI = obs.map(function (o) {
+      return errMult * recencyMult(ctx.recency, tNewest - o.t);
     });
     function ofv(eta) {
       var etaVec = eta;
@@ -1730,11 +1742,8 @@ table.data tr.assumed td { background: #fffbeb; }
       var s = omegaQuadVec(ctx.omega, etaVec);
       for (var i = 0; i < obs.length; i++) {
         var o = obs[i], pred = sim.c[i];
-        /* variance floor guards the MAP against a degenerate sd -> 0 when
-         * pred ~ 0. The recency term is added AFTER the floor and OUTSIDE
-         * errMult^2: the floor protects the assay term it was written for, and
-         * errMult rescales assay error, which occasion drift is not. */
-        var v = Math.max(sig.ADD + sig.PROP * pred * pred, 1e-6) * mult2 + ageInfl[i] * pred * pred;
+        // variance floor guards the MAP against a degenerate sd -> 0 when pred ~ 0
+        var v = Math.max(sig.ADD + sig.PROP * pred * pred, 1e-6) * multI[i] * multI[i];
         var sd = Math.sqrt(v);
         if (o.lloq && lloq > 0) {
           var lp = logPhi((lloq - pred) / sd);
@@ -2654,34 +2663,24 @@ table.data tr.assumed td { background: #fffbeb; }
         return quantileSorted(vals, 0.5);
       });
     }
-    /* Per-observation recency bookkeeping (v0.20.0). The preset curve is not
-     * auditable on its own — what a reader needs is how much each ACTUAL
-     * sample was discounted, so compute the realised relative weight
-     *   w_i = v_base / (v_base + inflation * ipred^2)
-     * at that sample's own individual prediction. w = 1 means untouched.
-     * Age is measured from the newest FITTED sample, the same reference
-     * makeOfv uses, so the two can never disagree. */
-    var recTauUsed = recencyTau(input.recency);
-    var recVarUsed = recTauUsed > 0 ? M.iovVar(disease, drug) : 0;
-    var recSig = M.spec(drug).SIGMA;
-    var recMult2 = (input.errMult != null && input.errMult > 0 ? input.errMult : 1);
-    recMult2 = recMult2 * recMult2;
-    /* Seed from the first fitted observation, NOT from 0: in steady-state mode
-     * the relative-time origin is the LATEST DOSE, so every sample taken before
-     * it has a negative time. Seeding at 0 made the newest sample look 0.4 days
-     * old instead of 0, and reported a discount on a sample the fit had (rightly)
-     * left alone. makeOfv is unaffected — it takes the true max of the sorted
-     * times — so this was a disclosure bug, not a fitting one. */
+    /* Per-observation recency bookkeeping. The preset name is not auditable on
+     * its own — what a reader needs is how much each ACTUAL sample was
+     * discounted. Because the inflation multiplies the residual SD, the
+     * realised relative weight is exactly 1/m^2, with no dependence on the
+     * sample's concentration.
+     *
+     * Seed the "newest sample" scan from the first fitted observation, NOT from
+     * 0: in steady-state mode the relative-time origin is the LATEST DOSE, so
+     * every sample taken before it has a negative time, and seeding at 0 would
+     * make the newest sample look slightly aged. Same reference makeOfv uses,
+     * so the two can never disagree. */
     var recNewest = obsFit.length ? obsFit[0].t : 0;
     for (var rn = 1; rn < obsFit.length; rn++) if (obsFit[rn].t > recNewest) recNewest = obsFit[rn].t;
-    function recencyOf(o, ipred) {
+    function recencyOf(o) {
       var ageD = recNewest - o.t;
       if (ageD < 0) ageD = 0;
-      if (!(recVarUsed > 0)) return { ageDays: ageD, inflation: 0, weight: 1 };
-      var infl = recVarUsed * (1 - Math.exp(-ageD / recTauUsed));
-      if (!isFinite(ipred)) return { ageDays: ageD, inflation: infl, weight: NaN };
-      var vBase = Math.max(recSig.ADD + recSig.PROP * ipred * ipred, 1e-6) * recMult2;
-      return { ageDays: ageD, inflation: infl, weight: vBase / (vBase + infl * ipred * ipred) };
+      var m = recencyMult(input.recency, ageD);
+      return { ageDays: ageD, mult: m, weight: 1 / (m * m) };
     }
 
     var popTyp = null;
@@ -2729,9 +2728,9 @@ table.data tr.assumed td { background: #fffbeb; }
       errMult: input.errMult != null && input.errMult > 0 ? input.errMult : 1,
       /* echo the recency setting back so the UI, the report and a saved
        * session all describe the fit that was actually run */
-      recency: recencyTau(input.recency) > 0 ? input.recency : 'off',
-      recencyTau: recencyTau(input.recency),
-      recencyVar: recencyTau(input.recency) > 0 ? M.iovVar(disease, drug) : 0,
+      recency: recencyMaxMult(input.recency) > 1 ? input.recency : 'off',
+      recencyMaxMult: recencyMaxMult(input.recency),
+      recencyTau: RECENCY_TAU_DAYS,
       draws: draws,
       interval: interval,
       horizon: horizon,
@@ -2750,10 +2749,10 @@ table.data tr.assumed td { background: #fffbeb; }
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
       /* v0.10.0 diagnostics exports */
       obsData: obs.map(function (o, i) {
-        var ip = ipredAtObs ? ipredAtObs[i] : NaN;
-        var rw = recencyOf(o, ip);
+        var rw = recencyOf(o);
         return { t: o.t, c: o.c, lloq: o.lloq, exclude: o.exclude, note: o.note,
-                 ipred: ip, ageDays: rw.ageDays, recencyWeight: rw.weight };
+                 ipred: ipredAtObs ? ipredAtObs[i] : NaN,
+                 ageDays: rw.ageDays, recencyMult: rw.mult, recencyWeight: rw.weight };
       }),
       nExcluded: obs.length - obsFit.length,
       popTypical: popTyp,
@@ -2989,7 +2988,9 @@ table.data tr.assumed td { background: #fffbeb; }
     mulberry32: mulberry32,
     gaussFactory: gaussFactory,
     makeOfv: makeOfv,
-    recencyTau: recencyTau,
+    recencyMult: recencyMult,
+    recencyMaxMult: recencyMaxMult,
+    RECENCY_TAU_DAYS: RECENCY_TAU_DAYS,
     mapEstimate: mapEstimate,
     laplaceCov: laplaceCov,
     runMCMC: runMCMC,
@@ -3785,7 +3786,7 @@ table.data tr.assumed td { background: #fffbeb; }
     lloq: 'Lowest concentration your lab can measure reliably (see the lab report, e.g. 10 \u00b5g/mL). Samples below this are still useful — tick \u201c< LLOQ\u201d when you add them.',
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
     errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes — the forecast then leans more on typical patients.',
-    recency: 'Optional, off by default. A patient\u2019s clearance drifts between occasions, so a sample from months ago describes them slightly less well than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 the newest sample is never discounted, and the oldest is never discarded. Low decays slowly, high decays fast. Only available where the model actually estimates between-occasion variability (eculizumab in aHUS).'
+    recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.'
   };
 
   /* P-badge click popover: the badge's own (dynamic) title, incl. the
@@ -4019,10 +4020,7 @@ table.data tr.assumed td { background: #fffbeb; }
       dSel.addEventListener('change', function () {
         readPatient();
         if (hintEl) hintEl.textContent = drugHintText();
-        // eculizumab PNH <-> aHUS is the only route by which the disease
-        // changes without applyDrugUI() running, and it is exactly the switch
-        // that turns the recency option on and off.
-        syncRecencyAvailability();
+        syncRecencyHint();
       });
     }
     var ar = $('ageRow');
@@ -4055,7 +4053,7 @@ table.data tr.assumed td { background: #fffbeb; }
     // runFit falls back to the drug default when left blank)
     var th = $('targetHint');
     if (th) th.textContent = spec.targetHint || '';
-    syncRecencyAvailability();
+    syncRecencyHint();
   }
 
   function targetLabel() {
@@ -4065,39 +4063,31 @@ table.data tr.assumed td { background: #fffbeb; }
   /* The trough target lives in a collapsed <details> so it cannot be changed by
    * accident; its summary always shows the value the forecast and the plot
    * actually use (the drug default until the user opens it and edits). */
-  /* Advanced fitting option: time-dependent recency weighting (v0.20.0).
-   * The magnitude of the discount is the drug's own published between-occasion
-   * clearance variance, so the option is only meaningful where the model
-   * estimates one — eculizumab in aHUS, and nothing else. recencyApplies()
-   * deliberately asks the MODEL (M.iovVar), which is the same predicate
-   * M.priorOmega uses to fold IOV into the prior, rather than re-testing the
-   * drug and disease by hand: two copies would drift the first time another
-   * drug gains an IOV term. */
+  /* Advanced fitting option: time-dependent weighting of older samples.
+   *
+   * This is a residual-error (SIGMA) setting, not a random-effects one: it
+   * multiplies each sample's residual SD by a factor that grows with the
+   * sample's age. It therefore applies to every drug and every disease, and
+   * does not depend on whether a given model estimates between-occasion
+   * variability — that is an OMEGA term and a separate matter entirely. */
   var RECENCY_PRESETS = ['off', 'low', 'medium', 'high'];
 
-  function recencyApplies() {
-    return M.iovVar(state.patient.disease, state.drug) > 0;
-  }
-
-  function syncRecencyAvailability() {
+  function syncRecencyHint() {
     var sel = $('pt-recency');
-    if (!sel) return;
-    var ok = recencyApplies();
-    sel.disabled = !ok;
-    if (!ok && state.recency !== 'off') state.recency = 'off';
-    if (!ok) sel.value = 'off';
+    if (sel) sel.value = RECENCY_PRESETS.indexOf(state.recency) >= 0 ? state.recency : 'off';
     var hint = $('recencyHint');
     if (!hint) return;
-    if (!ok) {
-      hint.textContent = 'Not available for ' + M.drug().label +
-        (M.drug().diseaseCovariate ? ' in ' + state.patient.disease : '') +
-        ': this model estimates no between-occasion variability in clearance, so there is no published amount by which to discount an older sample.';
+    var mx = B.recencyMaxMult(state.recency);
+    if (!(mx > 1)) {
+      hint.textContent = 'All measurements are weighted equally, whatever their date. ' +
+        'This is the published residual error model, and the default.';
       return;
     }
-    var tau = B.recencyTau(state.recency);
-    hint.textContent = tau > 0
-      ? 'Older samples carry a larger residual error (τ = ' + tau + ' days), so they influence the fit less than recent ones. The newest sample is never discounted; the oldest is never discarded.'
-      : 'All measurements are weighted equally, whatever their date. This is the published model and the default.';
+    var yr = B.recencyMult(state.recency, 365);
+    hint.textContent = 'Older samples are given a larger residual error, so they influence the fit ' +
+      'less than recent ones: ×' + yr.toFixed(2) + ' after a year, rising towards ×' + mx.toFixed(1) +
+      ' (a weight of ' + Math.round(100 / (mx * mx)) + '%). The newest sample is never inflated, ' +
+      'and no sample is ever discarded.';
   }
 
   function updateTargetFold() {
@@ -4605,9 +4595,10 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     /* Recency weighting changes what the fit is based on, so it must never be
      * silent: say which samples were discounted and by how much. */
-    if (fit.recencyTau > 0) {
+    if (fit.recencyMaxMult > 1) {
       var disc = (fit.obsData || []).filter(function (o) { return !o.exclude && o.recencyWeight < 0.995; });
-      ad.push(noteHtml('Older samples down-weighted (τ = ' + fit.recencyTau + ' days): ' +
+      ad.push(noteHtml('Older samples down-weighted (' + esc(fit.recency) + ', residual error up to ×' +
+        fit.recencyMaxMult + '): ' +
         (disc.length ? disc.length + ' of ' + (fit.obsData || []).length + ' measurement' +
           ((fit.obsData || []).length > 1 ? 's' : '') + ' carry a larger residual error, the oldest at ' +
           Math.round(100 * Math.min.apply(null, disc.map(function (o) { return o.recencyWeight; }))) +
@@ -4899,7 +4890,7 @@ table.data tr.assumed td { background: #fffbeb; }
     $('pt-lloq').value = state.lloq || '';
     if ($('pt-errmult')) $('pt-errmult').value = state.errMult || 1;
     if ($('pt-recency')) $('pt-recency').value = state.recency || 'off';
-    syncRecencyAvailability();
+    syncRecencyHint();
   }
 
   // ------------------------------ init ------------------------------------
@@ -4922,7 +4913,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (recSel) recSel.addEventListener('change', function () {
       readPatient();
       // the hint line quotes the chosen tau, so it is stale until refreshed
-      syncRecencyAvailability();
+      syncRecencyHint();
       markStale();
     });
     $('btnRun').addEventListener('click', runFit);
@@ -5444,31 +5435,32 @@ table.data tr.assumed td { background: #fffbeb; }
       'that could shift clearance, rather than relying on a forecast projected far ahead.</p>' +
       '<p>PNH (eculizumab), ravulizumab and crovalimab have no IOV term in their source models, so nothing is folded in for them.</p>' +
       '<h3>Weighting of older samples (optional, off by default)</h3>' +
-      '<p>Under <b>Advanced fitting options</b> the same occasion variance can also be used to discount ' +
-      '<i>older</i> measurements. Because a patient\'s clearance drifts between occasions, part of the ' +
-      'apparent misfit of a months-old sample is drift rather than measurement error. Switched on, each ' +
-      'sample\'s proportional residual error is inflated by ' +
-      'IOV<sub>CL</sub> × (1 − e<sup>−age/τ</sup>), where age is measured from the newest sample. The ' +
-      'newest sample is therefore never discounted, and because the term saturates at the drug\'s own ' +
-      'published occasion variance, an old sample is <b>down-weighted but never discarded</b>. The presets ' +
-      'set τ only: low 1095 days, medium 365 days, high 122 days. τ is not taken from any publication and ' +
-      'is never estimated from the patient\'s own data — with the handful of samples a real case carries it ' +
-      'would not be identifiable, and a free inflation parameter would simply be driven up until the ' +
-      'residuals vanished.</p>' +
-      '<p><b>Limitations, stated plainly.</b> The source model treats occasions as exchangeable — it ' +
-      'contains no timescale at all — so any τ &gt; 0 asserts more persistence than the publication itself ' +
-      'supports; the presets are a clinical judgement, not a fitted quantity. The discount is applied as ' +
-      'residual error while the occasion variance remains folded into the clearance prior, so the reported ' +
-      'credible intervals are, if anything, somewhat narrower than a full occasion-level treatment would ' +
-      'give — the caveat above about a future-occasion trough applies with more force when this option is ' +
-      'on, not less. Two samples drawn on the same past occasion are treated as independent, which ' +
-      'over-weights them slightly. The inflation is applied to the whole residual, so it also discounts ' +
-      'what an old sample said about volume, which does not drift between occasions. It is available only ' +
-      'for eculizumab in aHUS, the one drug and disease whose source model estimates an occasion variance; ' +
-      'borrowing that number for the others would be an extrapolation the app does not make. Finally, age ' +
-      'is not the same thing as relevance: a sample is often old because the patient was stable, and a ' +
-      'recent one drawn <i>because</i> something changed. To set aside a sample you believe is ' +
-      'unrepresentative, exclude it explicitly rather than relying on its date.</p>';
+      '<p>Under <b>Advanced fitting options</b>, older measurements can be given a larger residual error ' +
+      'so that they influence the individual fit less than recent ones. A concentration describes the ' +
+      'patient as they were on the day it was drawn; the further back that is, the less well it describes ' +
+      'them now — partly real change in the patient, partly a dosing history that is less reliably ' +
+      'documented the further back one looks.</p>' +
+      '<p>This is the existing assay-error multiplier made time-dependent, and nothing more. Each ' +
+      'sample\'s residual standard deviation is multiplied by ' +
+      '<b>1 + (M − 1) × (1 − e<sup>−age/365 d</sup>)</b>, where age is measured from the newest sample ' +
+      'and the preset sets M: low ×1.5, medium ×2, high ×3. The newest sample is therefore never ' +
+      'inflated, and because the multiplier saturates at M an old sample is <b>down-weighted but never ' +
+      'discarded</b> — at medium a year-old sample carries about 37% of its normal weight, falling ' +
+      'towards 25% for much older ones. Since the multiplier acts on the SD, a sample\'s relative weight ' +
+      'is exactly 1/M², independent of its concentration.</p>' +
+      '<p>It is a statement about the residual error (SIGMA) alone: it applies to every drug and every ' +
+      'disease, and is unrelated to the between-occasion variability described above, which is a ' +
+      'random-effect (OMEGA) term. Neither M nor the 365-day time constant is taken from a publication, ' +
+      'and neither is ever estimated from the patient\'s own data — with the handful of samples a real ' +
+      'case carries neither would be identifiable, and a free inflation parameter would simply be driven ' +
+      'up until the residuals vanished. They are a clinical judgement about how much to trust older ' +
+      'measurements, made explicit and printed in the report.</p>' +
+      '<p><b>Two cautions.</b> Widening the residual error widens the reported credible intervals, so a ' +
+      'forecast made with this option on is less certain, not more — that is the honest consequence of ' +
+      'leaning on fewer samples. And age is not the same thing as relevance: a sample is often old ' +
+      'because the patient was stable, and a recent one drawn <i>because</i> something changed. To set ' +
+      'aside a sample you believe is unrepresentative, exclude it explicitly rather than relying on its ' +
+      'date.</p>';
     M.listDrugs().forEach(function (d) {
       var s = M.spec(d.id);
       h += '<div class="about-model"><b>' + esc(s.label) + '</b>' +
@@ -5666,8 +5658,8 @@ table.data tr.assumed td { background: #fffbeb; }
       (spec.targetSource ? '<br><span class="rp-src">' + esc(spec.targetSource) + '</span>' : '') + '</td></tr>';
     if (st.lloq > 0) h += '<tr><td>Assay LLOQ</td><td>' + st.lloq + ' µg/mL (samples &lt; LLOQ handled with the M3 method)</td></tr>';
     if ((st.errMult || 1) !== 1) h += '<tr><td>Assay error multiplier</td><td>' + st.errMult + '</td></tr>';
-    if (fit && fit.recencyTau > 0) h += '<tr><td>Weighting of older samples</td><td>' +
-      esc(fit.recency) + ' (τ = ' + fit.recencyTau + ' days)</td></tr>';
+    if (fit && fit.recencyMaxMult > 1) h += '<tr><td>Weighting of older samples</td><td>' +
+      esc(fit.recency) + ' (residual error up to ×' + fit.recencyMaxMult + ')</td></tr>';
     h += '</table>';
 
     h += '<h3 class="rp-h">Dosing schedule' + (rel.ssMode ? ' (steady state: ' + rel.dosesRel.filter(function (d) { return d.amt; }).length + ' doses at ' + fmtC(rel.dosesRel[0].amt) + ' mg q' + (rel.dosesRel[1] ? fmtC(rel.dosesRel[1].t - rel.dosesRel[0].t) : '?') + 'd)' : '') + '</h3>';
@@ -5741,16 +5733,19 @@ table.data tr.assumed td { background: #fffbeb; }
       ((st.errMult || 1) !== 1 ? ' (scaled ×' + st.errMult + ')' : '') + '</td></tr>';
     /* The preset name alone is not auditable — a reader needs to see how much
      * each ACTUAL sample was discounted, at its own individual prediction. */
-    if (fit && fit.recencyTau > 0) {
+    if (fit && fit.recencyMaxMult > 1) {
       var rws = (fit.obsData || []).map(function (o) {
         return fmtDate(rel.t0ms + o.t * DAY) + ' — ' + Math.round(o.ageDays) + ' d older than the newest sample, ' +
-          'weight ' + Math.round(100 * o.recencyWeight) + '%' + (o.exclude ? ' (excluded from the fit)' : '');
+          'residual SD ×' + o.recencyMult.toFixed(2) + ', weight ' + Math.round(100 * o.recencyWeight) + '%' +
+          (o.exclude ? ' (excluded from the fit)' : '');
       });
-      h += '<tr><td>Older-sample weighting</td><td>' + esc(fit.recency) + ', τ = ' + fit.recencyTau +
-        ' days. Each measurement\'s proportional residual error is inflated by ' +
-        'IOV<sub>CL</sub> = ' + fit.recencyVar + ' × (1 − e<sup>−age/τ</sup>), saturating at the ' +
-        'published between-occasion variance — an old sample is discounted, never discarded. ' +
-        'Realised weights: ' + rws.map(esc).join('; ') + '.</td></tr>';
+      h += '<tr><td>Older-sample weighting</td><td>' + esc(fit.recency) +
+        '. Each measurement\'s residual standard deviation is multiplied by ' +
+        '1 + ' + (fit.recencyMaxMult - 1) + ' × (1 − e<sup>−age/' + fit.recencyTau + ' d</sup>), so it is ' +
+        'unchanged for the newest sample and rises towards ×' + fit.recencyMaxMult + ' for the oldest — ' +
+        'a sample is down-weighted, never discarded. This scales the residual error (SIGMA) only; it is ' +
+        'independent of the model\'s random-effect structure. Realised weights: ' +
+        rws.map(esc).join('; ') + '.</td></tr>';
     }
     h += '</table>';
 
