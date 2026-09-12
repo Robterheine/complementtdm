@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 07:43 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 09:33 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -449,6 +449,74 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 #reportSheet .rp-sig-cap { font-size: 10px; color: #64748b; margin-top: 2px; }
 
 
+/* ======================================================================
+ * v0.13.0 — accessibility, autosave recovery, excluded samples, assumed
+ * troughs, and print fidelity for the diagnostics graphics.
+ * ====================================================================== */
+
+/* The 5-95% interval used to be #94a3b8 on white = 2.56:1, failing WCAG AA,
+ * next to a full-contrast median — the typography said the median was the
+ * answer and the uncertainty a footnote. #475569 is 7.4:1. */
+.ci-range { color: #475569; font-weight: 400; }
+.empty-cell { color: #475569; padding: 8px 4px; }
+table.data tr.past td { color: #52606d; }
+.shrink-pct.weak, .shrink-key, .shrink-key .sk-weak { color: #52606d; }
+.ebe-val i { color: #52606d; }
+
+/* Samples kept on record but excluded from the likelihood */
+table.data tr.obs-ex td { opacity: .62; }
+table.data tr.obs-ex td b { text-decoration: line-through; }
+.obs-note {
+  width: 100%; font-size: 12px; padding: 3px 6px;
+  border: 1px solid #cbd5e1; border-radius: 4px; background: #fffdf5;
+}
+
+/* A trough the app projected rather than one the clinician scheduled */
+.tag-assumed {
+  display: inline-block; font-size: 10px; letter-spacing: .04em;
+  text-transform: uppercase; padding: 1px 5px; margin-left: 4px;
+  border: 1px solid #b45309; color: #b45309; border-radius: 3px; white-space: nowrap;
+}
+table.data tr.assumed td { background: #fffbeb; }
+.rp-assumed td { background: #fffbeb !important; }
+.rp-src { font-size: 10.5px; color: #52606d; }
+
+/* Autosave recovery bar */
+.restore-bar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin: 10px auto; max-width: 1180px; padding: 9px 14px;
+  border: 1px solid #f59e0b; background: #fffbeb; border-radius: 6px; font-size: 13px;
+}
+.restore-bar .restore-actions { margin-left: auto; display: flex; gap: 8px; }
+
+@media print {
+  /* The shrinkage tracks, EBE bars and residual dots are CSS background
+   * colours, so a default print (background graphics off) rendered them blank
+   * — while README promised they appear in the report. */
+  .shrink-fill, .shrink-track, .ebe-bar, .ebe-med, .ebe-zero, .res-dot,
+  .rp-assumed td, .badge {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .restore-bar { display: none !important; }
+}
+
+/* ---- dose-interval explorer (v0.13.0) ---- */
+.iv-controls {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;
+}
+.iv-controls label.f { margin: 0; }
+.iv-controls input[type="number"] { width: 120px; }
+.iv-chart { margin: 6px 0 12px; }
+.iv-table { margin-top: 6px; }
+.iv-table tr.iv-current td { background: #fffbeb; }
+.tag-current {
+  display: inline-block; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 5px; margin-left: 4px; border: 1px solid #b45309; color: #b45309;
+  border-radius: 3px; white-space: nowrap;
+}
+@media (max-width: 560px) { .iv-controls input[type="number"] { width: 90px; } }
+
 </style>
 </head>
 <body>
@@ -466,6 +534,15 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     <input type="file" id="importFile" accept=".json" style="display:none">
   </div>
 </header>
+
+<!-- Autosave recovery: offered, never applied silently -->
+<div class="restore-bar no-print" id="restoreBar" role="status" hidden>
+  <span id="restoreText"></span>
+  <span class="restore-actions">
+    <button class="primary" id="restoreYes" title="Load the autosaved doses and measurements back into the form">Restore</button>
+    <button id="restoreNo" title="Discard the autosaved session and start empty">Discard</button>
+  </span>
+</div>
 
 <!-- Novice stepper: guides the first case; each dot fills as the step is done -->
 <div class="stepper no-print" id="stepper">
@@ -552,10 +629,10 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
     <div id="fullDoseUI">
       <div class="tbl-wrap"><table class="data" id="doseTable"></table></div>
-      <form class="inline no-print" id="doseForm">
+      <form class="inline no-print" id="doseForm" novalidate>
         <div class="row3" style="margin-top:8px">
           <div><label class="f" for="dose-dt">Date &amp; time</label><input type="datetime-local" id="dose-dt" title="Scheduled date and time of the administration"></div>
-          <div><label class="f" for="dose-amt">Dose (mg)</label><input type="number" id="dose-amt" min="50" max="4000" step="50" placeholder="e.g. 900" title="Dose in mg"></div>
+          <div><label class="f" for="dose-amt">Dose (mg)</label><input type="number" id="dose-amt" min="50" max="4000" step="any" placeholder="e.g. 900" title="Dose in mg"></div>
           <div id="doseRouteWrap" style="display:none"><label class="f" for="dose-route">Route</label>
             <select id="dose-route" title="IV doses enter the central compartment directly; SC doses are absorbed via the depot compartment">
               <option value="iv">IV</option>
@@ -569,7 +646,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
     <div id="ssDoseUI" style="display:none">
       <div class="row3" style="margin-top:8px">
-        <div><label class="f" for="ss-dose">Dose (mg)</label><input type="number" id="ss-dose" min="50" max="4000" step="50" placeholder="e.g. 900" title="Maintenance dose per administration"></div>
+        <div><label class="f" for="ss-dose">Dose (mg)</label><input type="number" id="ss-dose" min="50" max="4000" step="any" placeholder="e.g. 900" title="Maintenance dose per administration"></div>
         <div><label class="f" for="ss-interval">Interval (days)</label><input type="number" id="ss-interval" min="1" max="90" step="1" placeholder="e.g. 14" title="Dosing interval in days — e.g. 14 = q2w"></div>
         <div><label class="f" for="ss-anchor">Latest dose on</label><input type="datetime-local" id="ss-anchor" title="Date and time of the most recent administration; this is day 0 of the forecast"></div>
       </div>
@@ -578,10 +655,10 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
     <h2 class="sub-h">Measured concentrations <span class="hint" id="sampleHint"></span> <span style="float:right"><button class="linklike" id="tplClear" title="Remove all doses and measurements">clear all</button></span></h2>
     <div class="tbl-wrap"><table class="data" id="obsTable"></table></div>
-    <form class="inline no-print" id="obsForm">
+    <form class="inline no-print" id="obsForm" novalidate>
       <div class="row3" style="margin-top:8px">
         <div><label class="f" for="obs-dt">Date &amp; time</label><input type="datetime-local" id="obs-dt" title="Time the blood sample was drawn — trough just before the next dose, or a peak after it"></div>
-        <div><label class="f" for="obs-val">Concentration (µg/mL)</label><input type="number" id="obs-val" min="0" max="2000" step="1" title="Measured serum concentration (1 µg/mL = 1 mg/L). Leave empty and tick '&lt; LLOQ' for a below-quantitation sample."></div>
+        <div><label class="f" for="obs-val">Concentration (µg/mL)</label><input type="number" id="obs-val" min="0" max="2000" step="any" title="Measured serum concentration (1 µg/mL = 1 mg/L). Leave empty and tick '&lt; LLOQ' for a below-quantitation sample."></div>
         <div style="align-self:end;display:flex;gap:8px;align-items:center">
           <label class="check" style="margin:0" title="Tick if the result was below the assay's lower limit of quantification (requires an LLOQ value)"><input type="checkbox" id="obs-lloq" title="Mark this sample as below the lower limit of quantification"> &lt; LLOQ</label>
           <button type="button" class="info" data-help="lloqbox" aria-label="What does below LLOQ mean?" aria-expanded="false" title="Tick if the result was below the assay's lower limit of quantification (requires an LLOQ value)">ⓘ</button>
@@ -646,6 +723,23 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     <div id="paramBlock"></div>
     <div id="troughBlock"></div>
     <div id="advisoryBlock"></div>
+
+    <!-- Dose-interval explorer: what this patient's own posterior predicts for
+         other dosing intervals. Shows consequences; recommends nothing. -->
+    <details id="intervalCard" class="fold no-print" hidden>
+      <summary>Dose-interval explorer <span class="hint">— what happens if the interval changes</span>
+        <button type="button" class="info" data-help="ivexplore" aria-label="About the dose-interval explorer" aria-expanded="false">ⓘ</button>
+      </summary>
+      <div class="fold-body">
+        <div class="iv-controls">
+          <label class="f" for="iv-amt">Dose per administration (mg)</label>
+          <input type="number" id="iv-amt" step="any" title="Amount given at each future administration — defaults to the last dose entered">
+          <button class="primary" id="iv-run" title="Evaluate the entered intervals using this patient's fitted parameters">Explore intervals</button>
+          <span class="hint" id="iv-status"></span>
+        </div>
+        <div id="iv-out"></div>
+      </div>
+    </details>
   </div>
 
 </main>
@@ -706,7 +800,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.12.0';
+  ECU.VERSION = '0.13.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -793,10 +887,18 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       diseaseCovariate: true,
       targetDefault: 75,
       targetHint: '≥ 50 µg/mL minimum; ≥ 75 µg/mL as a safe target.',
+      targetSource: 'Target derived from ter Avest et al. (PMID 35238929).',
+      targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/35238929/',
       diseaseNotes: {
         PNH: 'PNH: no between-occasion variability in this model — the most informative setting for TDM.',
         aHUS: 'aHUS: clearance varies between occasions (IOV folded into the prior) — wider uncertainty; sample around flares or regimen changes.'
-      }
+      },
+      assumptions: [
+        'Clearance is parallel linear + Michaelis–Menten (target-mediated). The nonlinear term dominates at low concentrations, so exposure is not proportional to dose.',
+        'In aHUS, between-occasion clearance variability (IOV, variance 0.112) is folded into the clearance prior: multi-occasion samples are treated as one exchangeable block, because the IIV/IOV split is not identifiable from the sparse data of a single patient. Occasion-level random effects are not estimated separately.',
+        'Because the occasion component stays folded in after fitting, the interval reported for an upcoming dose is somewhat narrower than the full occasion-to-occasion predictive uncertainty in aHUS.',
+        'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier under Advanced options.'
+      ]
     },
 
     ravulizumab: {
@@ -830,10 +932,11 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       diseaseCovariate: false,          // disease is not a covariate in this model
       targetDefault: 100,
       targetHint: '≥ 100 µg/mL minimum; ≥ 150 µg/mL for a more conservative approach.',
+      targetSource: 'Target derived from Sheridan et al. (PMID 33512711); it is the threshold relevant when TDM is used to prolong the dosing interval.',
+      targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/33512711/',
       assumptions: [
         'Simplified research re-implementation of the FDA-review population PK model (linear elimination, no IOV, weight as the only covariate); requires its own prospective validation.',
-        'Implements the ADA-negative population only.',
-        'In aHUS, samples from different occasions are pooled: the between-occasion clearance variability (IOV) is folded into the clearance prior, so multi-occasion data are treated as one exchangeable block (occasion-level random effects are not modelled).'
+        'Implements the ADA-negative population only.'
       ]
     },
 
@@ -893,14 +996,19 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       adminRoutes: { first: 'iv', subsequent: 'sc' },  // IV loading, then SC
       covariateAge: true,                  // UI asks for age
       samplePeak: 'SC peak ≈ one week or more after administration (absorption-limited); the IV loading dose peaks at the end of its infusion',
-      dose: { min: 100, max: 6000, step: 50, default: 3400 },
-      ssIntervalDefault: 14,
+      /* EMA PiaSky posology: 1000 mg IV loading (day 1); 340 mg SC on days 2, 8,
+       * 15 and 22; then maintenance every 4 weeks — 680 mg (≥40 to <100 kg) or
+       * 1020 mg (≥100 kg). There is no 3400 mg dose. */
+      dose: { min: 50, max: 2000, step: 10, default: 680 },
+      ssIntervalDefault: 28,
       obsValMax: 5000,                     // SC steady-state levels exceed the eculizumab-tuned default
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg — covariate on clearance and volumes (allometric scaling to 75 kg in this model).',
       diseaseCovariate: false,
       targetDefault: 75,
       targetHint: '≥ 75 µg/mL for complete C5 inhibition.',
+      targetSource: 'Target derived from PMID 39835421.',
+      targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/39835421/',
       assumptions: [
         'No anti-drug-antibody (ADA) effect: the control stream (run05) implements the ADA-negative population only — ADA-positive patients are outside this model\'s scope.',
         'The residual-error additive term (SD 1.01 mg/L) is the rich-sampling estimate; sparse TDM samples are therefore weighted relatively strongly.',
@@ -1515,28 +1623,57 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       pts[n] = nw;
     }
     pts.sort(function (a, b) { return a.f - b.f; });
-    return { x: pts[0].x, f: pts[0].f, iters: iter, ok: true };
+    // `converged` distinguishes a simplex that contracted to the tolerance from
+    // one that merely ran out of iterations. Nelder-Mead can stall on a
+    // non-stationary point in >2 dimensions, and the resulting x is reported to
+    // the user as the individual PK estimate — so a stall must not look like a
+    // success (v0.13.0).
+    return { x: pts[0].x, f: pts[0].f, iters: iter, ok: true, converged: iter < maxIter };
   }
 
-  function mapEstimate(ofv, step) {
+  function mapEstimate(ofv, step, opts) {
     // Generic over eta dimension: step length determines dims (default 2D for backward compat).
     // When step length >2, the refinement steps are repeated with scaled small steps.
     var n = Array.isArray(step) ? step.length : 2;
     step = step || [0.4, 0.4];
     if (step.length !== n) n = step.length;
-    var x0 = new Array(n); for (var k = 0; k < n; k++) x0[k] = 0;
-    var r = nelderMead(ofv, x0, step, n <= 2 ? 300 : 500);
-    if (!r.ok) return r;
-    // refinement stages — scale steps per dimension (smaller variance dims get smaller steps)
-    var small = step.map(function (s) { return s * 0.2; });
-    var tiny  = step.map(function (s) { return s * 0.05; });
-    // ensure minimum step sizes for very small variances
-    for (var kk = 0; kk < n; kk++) { if (small[kk] < 0.02) small[kk] = 0.02; if (tiny[kk] < 0.005) tiny[kk] = 0.005; }
-    var r2 = nelderMead(ofv, r.x, small, n <= 2 ? 200 : 350);
-    if (r2.ok && r2.f < r.f) r = r2;
-    var r3 = nelderMead(ofv, r.x, tiny, n <= 2 ? 150 : 250);
-    if (r3.ok && r3.f < r.f) r = r3;
-    return r;
+    opts = opts || {};
+
+    function runFrom(x0) {
+      var r = nelderMead(ofv, x0, step, n <= 2 ? 300 : 500);
+      if (!r.ok) return r;
+      // refinement stages — scale steps per dimension (smaller variance dims get smaller steps)
+      var small = step.map(function (s) { return s * 0.2; });
+      var tiny  = step.map(function (s) { return s * 0.05; });
+      // ensure minimum step sizes for very small variances
+      for (var kk = 0; kk < n; kk++) { if (small[kk] < 0.02) small[kk] = 0.02; if (tiny[kk] < 0.005) tiny[kk] = 0.005; }
+      var r2 = nelderMead(ofv, r.x, small, n <= 2 ? 200 : 350);
+      if (r2.ok && r2.f < r.f) r = r2;
+      var r3 = nelderMead(ofv, r.x, tiny, n <= 2 ? 150 : 250);
+      if (r3.ok && r3.f < r.f) r = r3;
+      return r;
+    }
+
+    var zero = new Array(n); for (var k = 0; k < n; k++) zero[k] = 0;
+    var best = runFrom(zero);
+    if (!best.ok) return best;
+
+    /* v0.13.0: refit from a dispersed start and keep the better OFV. A single
+     * start at eta = 0 can stall on a ridge (SC-only crovalimab, where CL and F
+     * trade off). `startGap` is the OFV disagreement between starts — the UI
+     * warns when it is large, instead of silently returning the worse mode. */
+    var starts = opts.starts != null ? opts.starts : 1;
+    var gap = 0;
+    for (var s = 0; s < starts; s++) {
+      var sign = (s % 2 === 0) ? 1 : -1;
+      var alt = runFrom(step.map(function (st) { return sign * 0.5 * st; }));
+      if (alt.ok && isFinite(alt.f)) {
+        gap = Math.max(gap, Math.abs(alt.f - best.f));
+        if (alt.f < best.f - 1e-9) best = alt;
+      }
+    }
+    best.startGap = gap;
+    return best;
   }
 
   function stepForOmega(omega) {
@@ -1715,10 +1852,17 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   async function runMCMC(ofv, x0, cov, opts, rng, onProgress) {
     opts = opts || {};
     var iters = opts.iters || 4000;
-    var burnIn = Math.floor(iters * 0.4);
     var maxKeep = opts.maxKeep || 1000;
-    var keepEvery = Math.max(1, Math.floor((iters - burnIn) / maxKeep));
     var chunk = opts.chunk || 200;
+    /* v0.13.0: the total iteration budget is split across several chains from
+     * overdispersed starts so that split-R-hat can detect a chain that never
+     * found the posterior. Effective sample size measures mixing *within*
+     * whatever region a chain reached and cannot see that failure. */
+    var nChains = Math.max(1, Math.floor(opts.chains || 1));
+    var perChain = Math.max(100, Math.floor(iters / nChains));
+    var burnIn = Math.floor(perChain * 0.4);
+    // ceil (not floor) so maxKeep is actually honoured across all chains
+    var keepEvery = Math.max(1, Math.ceil((perChain - burnIn) * nChains / maxKeep));
 
     // Cholesky of the proposal covariance (symmetrized, N x N; N = eta dim).
     // For N = 2 this is algebraically identical to the former hand-written
@@ -1736,45 +1880,134 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       for (ci = 0; ci < nD; ci++) { Lc[ci] = new Array(nD).fill(0); Lc[ci][ci] = Math.sqrt(C[ci][ci]); }
     }
 
-    var x = x0.slice(), fx = ofv(x);
     // Initialize the step-size from the proposal (Laplace) scale rather than a
     // fixed 0.6 — a sharply identified posterior starts smaller, a flat one
     // larger, which shortens burn-in (audit P4c).
     var meanVar = 0;
     for (ci = 0; ci < nD; ci++) meanVar += C[ci][ci];
-    var logS = Math.log(Math.min(2, Math.max(0.05, Math.sqrt(meanVar / nD))));
-    var acc = 0, accWin = 0;
-    var draws = [];
+    var logS0 = Math.log(Math.min(2, Math.max(0.05, Math.sqrt(meanVar / nD))));
+
     var g = gaussFactory(rng);
     var z = new Array(nD), prop = new Array(nD);
+    var draws = [], chains = [];
+    var accPost = 0, nPost = 0, logS = logS0;
+    var totalIters = perChain * nChains, done = 0;
 
-    for (var it = 0; it < iters; it++) {
-      for (ci = 0; ci < nD; ci++) z[ci] = g();
-      for (ci = 0; ci < nD; ci++) {
-        var accL = 0;
-        for (var cj2 = 0; cj2 <= ci; cj2++) accL += Lc[ci][cj2] * z[cj2];
-        prop[ci] = x[ci] + Math.exp(logS) * accL;
+    for (var chain = 0; chain < nChains; chain++) {
+      var x = x0.slice();
+      if (chain > 0) {
+        /* Overdispersed start: ~2 proposal SDs from the mode. Chains that agree
+         * from here have genuinely mixed; a chain stuck elsewhere shows up as
+         * split-R-hat > 1. */
+        for (ci = 0; ci < nD; ci++) z[ci] = g();
+        for (ci = 0; ci < nD; ci++) {
+          var dsp = 0;
+          for (var dj = 0; dj <= ci; dj++) dsp += Lc[ci][dj] * z[dj];
+          x[ci] += 2 * dsp;
+        }
       }
-      var fprop = ofv(prop);
-      if (isFinite(fprop)) {
-        var logr = -0.5 * (fprop - fx);
-        if (Math.log(rng() + 1e-300) < logr) { x = prop.slice(); fx = fprop; acc++; accWin++; }
+      var fx = ofv(x);
+      if (!isFinite(fx)) { x = x0.slice(); fx = ofv(x); }
+
+      logS = logS0;
+      var accWin = 0, adaptWin = 0;
+      var chainDraws = [];
+
+      for (var it = 0; it < perChain; it++) {
+        for (ci = 0; ci < nD; ci++) z[ci] = g();
+        for (ci = 0; ci < nD; ci++) {
+          var accL = 0;
+          for (var cj2 = 0; cj2 <= ci; cj2++) accL += Lc[ci][cj2] * z[cj2];
+          prop[ci] = x[ci] + Math.exp(logS) * accL;
+        }
+        var fprop = ofv(prop);
+        var accepted = false;
+        if (isFinite(fprop)) {
+          var logr = -0.5 * (fprop - fx);
+          if (Math.log(rng() + 1e-300) < logr) { x = prop.slice(); fx = fprop; accepted = true; }
+        }
+        if (accepted) accWin++;
+        if (it >= burnIn) { nPost++; if (accepted) accPost++; }
+
+        if (it < burnIn && (it + 1) % 50 === 0) {
+          var rate = accWin / 50; accWin = 0;
+          logS += (rate - 0.3);
+          logS = Math.min(Math.max(logS, Math.log(0.05)), Math.log(5));
+        } else if (it >= burnIn && (it + 1) % 200 === 0) {
+          /* Continued adaptation repairs a mis-tuned burn-in scale (audit P3),
+           * but a constant gain violates the diminishing-adaptation condition,
+           * so the kept chain would not be guaranteed to target the posterior.
+           * v0.13.0: the gain now decays as 1/sqrt(window), which satisfies it. */
+          adaptWin++;
+          var rateS = accWin / 200; accWin = 0;
+          logS += (0.25 / Math.sqrt(adaptWin)) * (rateS - 0.3);
+          logS = Math.min(Math.max(logS, Math.log(0.05)), Math.log(5));
+        }
+        if (it >= burnIn && ((it - burnIn) % keepEvery === 0)) chainDraws.push(x.slice());
+
+        done++;
+        if (onProgress && done % chunk === 0) { onProgress(done / totalIters); await tick(); }
       }
-      if (it < burnIn && (it + 1) % 50 === 0) {
-        var rate = accWin / 50; accWin = 0;
-        logS += (rate - 0.3);
-        logS = Math.min(Math.max(logS, Math.log(0.05)), Math.log(5));
-      } else if (it >= burnIn && (it + 1) % 200 === 0) {
-        // gentle continued adaptation during sampling (audit P3): repairs a
-        // mis-tuned burn-in scale (diminishing-adaptation style, low gain).
-        var rateS = accWin / 200; accWin = 0;
-        logS += 0.25 * (rateS - 0.3);
-        logS = Math.min(Math.max(logS, Math.log(0.05)), Math.log(5));
-      }
-      if (it >= burnIn && ((it - burnIn) % keepEvery === 0)) draws.push(x.slice());
-      if (onProgress && it % chunk === 0) { onProgress(it / iters); await tick(); }
+
+      chains.push(chainDraws);
+      for (var kd = 0; kd < chainDraws.length; kd++) draws.push(chainDraws[kd]);
     }
-    return { draws: draws, acceptance: iters ? acc / iters : 0, logS: logS };
+
+    var rhat = null;
+    if (nChains > 1) {
+      rhat = [];
+      for (var rd = 0; rd < nD; rd++) rhat.push(splitRhat(chains, rd));
+    }
+    return {
+      draws: draws,
+      chains: chains,
+      nChains: nChains,
+      rhat: rhat,
+      // acceptance over the kept (post-burn-in) iterations only — the previous
+      // figure averaged in the adaptation phase and read high
+      acceptance: nPost ? accPost / nPost : 0,
+      logS: logS
+    };
+  }
+
+  /* Split-R-hat (Gelman et al.): each chain is halved and the between-segment
+   * variance is compared with the within-segment variance. ~1 means the chains
+   * describe the same distribution; > 1.05 is a convergence warning. Returns
+   * null when there are too few segments or the within-variance is degenerate. */
+  function splitRhat(chains, dim) {
+    var segs = [], c, h;
+    for (c = 0; c < chains.length; c++) {
+      var ch = chains[c];
+      if (!ch || ch.length < 4) continue;
+      h = Math.floor(ch.length / 2);
+      segs.push(ch.slice(0, h));
+      segs.push(ch.slice(h, 2 * h));
+    }
+    if (segs.length < 2) return null;
+    var n = Infinity, s, k;
+    for (s = 0; s < segs.length; s++) n = Math.min(n, segs[s].length);
+    if (!(n > 1)) return null;
+    var means = [], vars = [];
+    for (s = 0; s < segs.length; s++) {
+      var m = 0;
+      for (k = 0; k < n; k++) m += segs[s][k][dim];
+      m /= n;
+      var v = 0;
+      for (k = 0; k < n; k++) { var d = segs[s][k][dim] - m; v += d * d; }
+      means.push(m); vars.push(v / (n - 1));
+    }
+    var mm = 0, j;
+    for (j = 0; j < means.length; j++) mm += means[j];
+    mm /= means.length;
+    var B = 0;
+    for (j = 0; j < means.length; j++) B += (means[j] - mm) * (means[j] - mm);
+    B = B * n / (means.length - 1);
+    var W = 0;
+    for (j = 0; j < vars.length; j++) W += vars[j];
+    W /= vars.length;
+    if (!(W > 1e-14)) return null;
+    var varPlus = ((n - 1) / n) * W + B / n;
+    return Math.sqrt(varPlus / W);
   }
 
   // ------------------------- Prior / draws --------------------------------
@@ -1893,12 +2126,16 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   }
 
   // --------------------------- Grid helpers -------------------------------
-  /* Per-eta shrinkage toward the population prior, from the kept posterior
-   * draws: shrinkage_i = 1 − var(draws_i) / priorVar_i. 0 → the data told us
-   * nothing about that eta (posterior = prior); ~1 → well determined by the
-   * samples. Negative values (numerical noise when data add nothing) are
-   * clamped to 0. */
-  function etaShrinkageOf(draws, omega) {
+  /* Per-eta DATA-INFORMATIVENESS: 1 - posterior variance / prior variance.
+   * 0 = the samples taught us nothing about this eta (it stays on the
+   * population prior); 1 = it is fully determined by the measurements.
+   *
+   * Deliberately NOT called shrinkage: classical eta-shrinkage is
+   * 1 - SD(EBE)/omega across a POPULATION, where HIGH means the data were
+   * uninformative — the opposite polarity to this quantity. Reporting this
+   * number under that name inverts its meaning for a pharmacometrician reader
+   * (renamed in v0.13.0; the value and its interpretation are unchanged). */
+  function etaInformationOf(draws, omega) {
     if (!draws || draws.length < 4) return null;
     var nD = draws[0].length;
     var vars = omega.vars || [omega.cl, omega.v1];
@@ -1954,8 +2191,14 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
   /* Modal inter-dose interval of the more recent half of the schedule (the
    * loading phase of a regimen can otherwise distort the overall mode). */
-  function modalInterval(doses) {
-    var best = 14, bestN = 0;
+  /* Most common spacing between the later doses. When it cannot be derived
+   * (a single dose), fall back to the SELECTED DRUG's own maintenance interval
+   * rather than a hardcoded 14 days — for a q8w drug such as ravulizumab the
+   * old fallback reported a trough six weeks too early, at a far higher
+   * concentration and with P(>target) near 1 (v0.13.0). */
+  function modalInterval(doses, fallback) {
+    var def = fallback > 0 ? fallback : (M.drug().ssIntervalDefault || 14);
+    var best = def, bestN = 0;
     var counts = {};
     var start = Math.max(1, Math.floor(doses.length / 2));
     for (var i = start; i < doses.length; i++) {
@@ -1995,8 +2238,17 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   function troughTimesOf(doses, interval) {
     var out = [];
     for (var i = 1; i < doses.length; i++) out.push(doses[i].t - 1e-6);
-    if (doses.length) out.push(doses[doses.length - 1].t + (interval || 14) - 1e-6);
+    if (doses.length) out.push(virtualTroughTime(doses, interval));
     return out.sort(function (a, b) { return a - b; });
+  }
+
+  /* The one trough that does NOT correspond to an entered dose: it assumes the
+   * next administration happens one interval after the last entered one. The UI
+   * labels this row so it is never read as scheduled data. */
+  function virtualTroughTime(doses, interval) {
+    if (!doses.length) return null;
+    var iv = interval > 0 ? interval : (M.drug().ssIntervalDefault || 14);
+    return doses[doses.length - 1].t + iv - 1e-6;
   }
 
   // ------------------------------ runFit ----------------------------------
@@ -2024,11 +2276,18 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     // taken before the first dose in full-schedule mode.
     var obs = (input.obs || [])
       .filter(function (o) { return isFinite(o.t) && (isFinite(o.c) || o.lloq); })
-      .map(function (o) { return { t: o.t, c: o.c, lloq: !!o.lloq }; });
+      .map(function (o) { return { t: o.t, c: o.c, lloq: !!o.lloq, exclude: !!o.exclude, note: o.note || '' }; });
+    /* v0.13.0 — samples the clinician has flagged (drawn after plasma exchange,
+     * apheresis or CRRT, or with a documented pre-analytical problem) are still
+     * shown on the chart and printed in the report, but contribute nothing to
+     * the likelihood. Without this, one such sample is fitted exactly and
+     * becomes a permanent, confidently-wrong individual clearance that every
+     * diagnostic then reports as a good fit. */
+    var obsFit = obs.filter(function (o) { return !o.exclude; });
     // A censored sample is only usable when the LLOQ is actually known — without
     // it the M3 likelihood is undefined. Fail loudly rather than silently treating
     // the sample as a concentration of 0.
-    if (obs.some(function (o) { return o.lloq && !(input.lloq > 0); })) {
+    if (obsFit.some(function (o) { return o.lloq && !(input.lloq > 0); })) {
       throw new Error('A measurement is flagged below LLOQ but no LLOQ value is set — enter the assay LLOQ in the patient card.');
     }
 
@@ -2072,9 +2331,10 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     // ---- MAP + MCMC ----
     var mapRes = null, cov = null, covInfo = null, draws = null, acceptance = 0;
     var essCL = null, essV1 = null, essAll = null;
-    var etaShrinkage = null, etaCorr = null;
-    if (obs.length) {
-      var ctx = { wt: input.wt, age: age, disease: disease, drug: drug, doses: doses, obs: obs, lloq: input.lloq || 0, omega: omega, rtol: 1e-6, errMult: input.errMult };
+    var etaInformation = null, etaCorr = null;
+    var rhat = null, nChains = 0;
+    if (obsFit.length) {
+      var ctx = { wt: input.wt, age: age, disease: disease, drug: drug, doses: doses, obs: obsFit, lloq: input.lloq || 0, omega: omega, rtol: 1e-6, errMult: input.errMult };
       var ofv = makeOfv(ctx);
       prog(0.22, 'MAP estimation…');
       await tick();
@@ -2088,10 +2348,17 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       // runtime stays ≈ 2–3 s in the browser.
       // v0.9.0: higher-dimensional posteriors (crovalimab 6-eta) get more
       // iterations to reach the same effective sample size.
-      var mcmc = await runMCMC(ofv, mapRes.x, cov, { iters: input.mcmcIters || (omega.dims > 2 ? 10000 : 8000), maxKeep: 2400 }, rng,
-        function (f) { prog(0.3 + 0.45 * f, 'MCMC posterior sampling…'); });
+      var mcmc = await runMCMC(ofv, mapRes.x, cov, {
+        iters: input.mcmcIters || (omega.dims > 2 ? 10000 : 8000),
+        maxKeep: 2400,
+        // v0.13.0: split the budget across chains from overdispersed starts so
+        // split-R-hat can detect a chain that never reached the posterior
+        chains: input.mcmcChains || 4
+      }, rng, function (f) { prog(0.3 + 0.45 * f, 'MCMC posterior sampling…'); });
       draws = mcmc.draws;
       acceptance = mcmc.acceptance;
+      rhat = mcmc.rhat;
+      nChains = mcmc.nChains;
       if (!draws.length) draws = [mapRes.x.slice()];
       essAll = [];
       for (var ed = 0; ed < mapRes.x.length; ed++) {
@@ -2104,7 +2371,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       // that eta, ~1 = well determined) and the conditional correlation matrix
       // of the posterior draws (which etas trade off, e.g. ka/F vs CL under
       // SC-only sampling). Surfaced by the UI as sampling advice.
-      etaShrinkage = etaShrinkageOf(draws, omega);
+      etaInformation = etaInformationOf(draws, omega);
       etaCorr = corrMatrix(draws);
     } else {
       draws = priorEta;
@@ -2112,11 +2379,13 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
     // ---- posterior predictive on grid + troughs (within the display window) ----
     var troughs = troughTimesOf(doses, interval).filter(function (t) { return t >= windowStart - 1e-9; });
+    // the one trough that assumes a next dose rather than reflecting an entered one
+    var virtualT = virtualTroughTime(doses, interval);
     var outTimes = grid.concat(troughs);
     prog(0.8, 'Posterior predictive simulation…');
     // v0.8.1: the posterior band also carries the population absorption
     // variability (ka, F) — conditional on the fitted CL/V1 posteriors
-    var postAux = omega.dims > 2 ? null : (obs.length ? auxDraws(draws.length, drug, rng) : priorAux);
+    var postAux = omega.dims > 2 ? null : (obsFit.length ? auxDraws(draws.length, drug, rng) : priorAux);
     // v0.10.0: individual predictions are needed at the observation times for
     // the GOF diagnostics — merge obs times into the posterior simulation grid
     // (dedup within 1e-6; remember indices so the diagnostics can find them).
@@ -2140,11 +2409,14 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
         med: quantileSortedOfColumn(postMat, col, 0.5),
         p5: quantileSortedOfColumn(postMat, col, 0.05),
         p95: quantileSortedOfColumn(postMat, col, 0.95),
-        pTarget: probAbove(postMat, col, target)
+        pTarget: probAbove(postMat, col, target),
+        // true for the single projected row: no dose was entered at this time,
+        // the app assumed one interval after the last entered dose
+        assumed: virtualT != null && Math.abs(t - virtualT) < 1e-9
       };
       // audit P2: Monte-Carlo 95% interval for P via batch means over the chain
       // order (respects autocorrelation; ~12 batches).
-      if (obs.length) stat.pCI = batchMeansCI(postMat, col, target);
+      if (obsFit.length) stat.pCI = batchMeansCI(postMat, col, target);
       return stat;
     });
 
@@ -2172,7 +2444,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     var popTyp = null;
     try { popTyp = M.indivParams(input.wt, disease, new Array(omega.dims).fill(0), drug, age); } catch (e) { popTyp = null; }
     var clDraws = [], v1Draws = [];
-    if (obs.length) {
+    if (obsFit.length) {
       for (var di = 0; di < draws.length; di++) {
         var pd = M.indivParams(input.wt, disease, draws[di], drug, age);
         clDraws.push(pd.cl); v1Draws.push(pd.v1);
@@ -2182,7 +2454,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     var T1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
     return {
-      hasObs: obs.length > 0,
+      hasObs: obsFit.length > 0,
       disease: disease,
       wt: input.wt,
       age: age,
@@ -2193,14 +2465,21 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
         etaVec: mapRes.x.slice(),
         etaNames: M.spec(drug).ETA ? M.spec(drug).ETA.names.slice() : ['CL', 'V1'],
         ofv: mapRes.f,
+        // v0.13.0: a Nelder-Mead simplex that merely ran out of iterations no
+        // longer looks like a success; startGap is the OFV disagreement between
+        // the dispersed starts (large = possible local optimum).
+        converged: mapRes.converged !== false,
+        startGap: mapRes.startGap != null ? mapRes.startGap : 0,
         params: M.indivParams(input.wt, disease, mapRes.x, drug, age)
       } : null,
       acceptance: acceptance,
+      rhat: rhat,
+      nChains: nChains,
       nDraws: draws.length,
       essCL: essCL,
       essV1: essV1,
       essAll: essAll,
-      etaShrinkage: etaShrinkage,
+      etaInformation: etaInformation,
       etaCorr: etaCorr,
       etaDim: omega.dims,
       covFallback: covInfo ? covInfo.fallback : false,
@@ -2216,12 +2495,107 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       clQ: { p5: quantileSorted(clArr, 0.05), med: quantileSorted(clArr, 0.5), p95: quantileSorted(clArr, 0.95) },
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
       /* v0.10.0 diagnostics exports */
-      obsData: obs.map(function (o, i) { return { t: o.t, c: o.c, lloq: o.lloq, ipred: ipredAtObs ? ipredAtObs[i] : NaN }; }),
+      obsData: obs.map(function (o, i) {
+        return { t: o.t, c: o.c, lloq: o.lloq, exclude: o.exclude, note: o.note,
+                 ipred: ipredAtObs ? ipredAtObs[i] : NaN };
+      }),
+      nExcluded: obs.length - obsFit.length,
       popTypical: popTyp,
-      clPostDraws: obs.length ? clDraws : null,
-      v1PostDraws: obs.length ? v1Draws : null,
+      clPostDraws: obsFit.length ? clDraws : null,
+      v1PostDraws: obsFit.length ? v1Draws : null,
       runtimeMs: T1 - T0
     };
+  }
+
+  /* ------------------- dose-interval explorer (v0.13.0) -------------------
+   * Routine TDM for these agents is largely about PROLONGING the dosing
+   * interval, and until v0.13.0 answering "can this patient move from q2w to
+   * q3w?" meant hand-entering every future dose and re-running the whole fit
+   * once per candidate interval — about a minute of work per question, for a
+   * posterior that is identical across all of them.
+   *
+   * The posterior does not depend on the future schedule, so each candidate can
+   * be evaluated by pushing the SAME kept draws through a different forward
+   * regimen. Two quantities are returned per candidate interval:
+   *
+   *   next — the trough before the next administration if it is delayed to
+   *          that interval. Directly answerable, assumes nothing beyond the
+   *          one delayed dose.
+   *   ss   — the trough once the patient has been continued on that interval
+   *          long enough to re-approach steady state. This is the number that
+   *          matters for a routine change, and for drugs that accumulate it is
+   *          materially lower than `next`.
+   *
+   * This reports consequences for intervals the clinician asks about. It does
+   * not choose one: no threshold is applied and no interval is recommended.
+   *
+   * opts: { draws, doses, wt, disease, age, drug, target, amt, intervals[],
+   *         maxDraws?, horizonDays?, onProgress? }
+   */
+  async function intervalScan(opts) {
+    var draws = opts.draws || [];
+    var doses = (opts.doses || []).slice().sort(function (a, b) { return a.t - b.t; });
+    if (!draws.length || !doses.length) return [];
+    var drug = opts.drug || M.drug().id;
+    var spec = M.spec(drug);
+    var target = opts.target != null ? opts.target : (spec.targetDefault || 75);
+    var last = doses[doses.length - 1];
+    var amt = opts.amt > 0 ? opts.amt : last.amt;
+    // Future administrations follow the maintenance route (SC for crovalimab).
+    var route = spec.adminRoutes ? spec.adminRoutes.subsequent : (last.route || null);
+    // Subsampled draws keep this interactive; the quantiles stay stable because
+    // subsample() takes an evenly spaced slice of the chain, not the head.
+    var sub = subsample(draws, opts.maxDraws || 250);
+    var horizon = opts.horizonDays || 200;
+    var out = [];
+    var ivs = opts.intervals || [];
+
+    for (var k = 0; k < ivs.length; k++) {
+      var iv = ivs[k];
+      if (!(iv > 0)) continue;
+      // enough cycles to re-approach steady state on the candidate interval
+      var nCycles = Math.max(3, Math.min(30, Math.ceil(horizon / iv)));
+      var fwd = doses.slice();
+      for (var c = 1; c <= nCycles; c++) {
+        fwd.push({ t: last.t + c * iv, amt: amt, route: route });
+      }
+      var tNext = last.t + iv - 1e-6;                 // trough before the next dose
+      var tSS = last.t + nCycles * iv - 1e-6;         // trough after continuing
+      var mat = await simulateDraws(sub, fwd, [tNext, tSS], opts.wt, opts.disease,
+        null, 64, opts.age, drug, null);
+      out.push({
+        interval: iv,
+        nCycles: nCycles,
+        next: {
+          med: quantileSortedOfColumn(mat, 0, 0.5),
+          p5: quantileSortedOfColumn(mat, 0, 0.05),
+          p95: quantileSortedOfColumn(mat, 0, 0.95),
+          pTarget: probAbove(mat, 0, target)
+        },
+        ss: {
+          med: quantileSortedOfColumn(mat, 1, 0.5),
+          p5: quantileSortedOfColumn(mat, 1, 0.05),
+          p95: quantileSortedOfColumn(mat, 1, 0.95),
+          pTarget: probAbove(mat, 1, target)
+        }
+      });
+      if (opts.onProgress) { opts.onProgress((k + 1) / ivs.length); await tick(); }
+    }
+    return out;
+  }
+
+  /* Candidate intervals around the one the patient is on: the same interval,
+   * then progressively longer ones (interval prolongation is the usual
+   * direction), plus one shorter for context. Whole days, deduplicated. */
+  function candidateIntervals(current) {
+    var cur = current > 0 ? current : 14;
+    var mult = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+    var seen = {}, out = [];
+    mult.forEach(function (m) {
+      var v = Math.max(1, Math.round(cur * m));
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort(function (a, b) { return a - b; });
   }
 
   /* Monte-Carlo 95% interval for P(column > threshold) via batch means over the
@@ -2245,10 +2619,28 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     if (nBatches < 3) return [mean, mean];
     var varr = ps.reduce(function (a, c) { return a + (c - mean) * (c - mean); }, 0) / (nBatches - 1);
     var se = Math.sqrt(varr / nBatches);
+    /* The SE is estimated from nBatches batch proportions, so it carries
+     * nBatches-1 degrees of freedom: the normal multiplier 1.96 makes the
+     * interval ~11% too narrow at 12 batches, in exactly the direction that
+     * matters at the 90% decision badge. Use Student t instead (v0.13.0). */
+    var mult = tQuantile975(nBatches - 1);
     return [
-      Math.max(0, mean - 1.96 * se),
-      Math.min(1, mean + 1.96 * se)
+      Math.max(0, mean - mult * se),
+      Math.min(1, mean + mult * se)
     ];
+  }
+
+  /* Two-sided 97.5% Student-t quantile. Small-df values are tabulated (the only
+   * ones this engine uses); beyond the table the normal limit is accurate to
+   * better than 1%. */
+  var T975 = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262,
+              2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101,
+              2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052,
+              2.048, 2.045, 2.042];
+  function tQuantile975(df) {
+    if (!(df >= 1)) return 1.96;
+    if (df <= 30) return T975[Math.floor(df) - 1];
+    return 1.96 + (2.042 - 1.96) * (30 / df);
   }
 
   function quantileSortedOfColumn(mat, col, q) {
@@ -2270,7 +2662,9 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     subsample: subsample,
     simulateDraws: simulateDraws,
     ess: ess,
-    etaShrinkageOf: etaShrinkageOf,
+    splitRhat: splitRhat,
+    tQuantile975: tQuantile975,
+    etaInformationOf: etaInformationOf,
     corrMatrix: corrMatrix,
     batchMeansCI: batchMeansCI,
     quantileSorted: quantileSorted,
@@ -2279,6 +2673,9 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     modalInterval: modalInterval,
     buildGrid: buildGrid,
     troughTimesOf: troughTimesOf,
+    virtualTroughTime: virtualTroughTime,
+    intervalScan: intervalScan,
+    candidateIntervals: candidateIntervals,
     runFit: runFit
   };
 
@@ -2378,8 +2775,21 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       return m.t + ih - (v / yMax) * ih;
     }
 
+    function escT(x) {
+      return String(x == null ? '' : x)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
     var s = [];
-    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;font-family:inherit">');
+    /* role="img" + <title>/<desc>: without them a screen-reader user got nothing
+     * at all from the forecast. The trough table alongside carries the numbers,
+     * so the description names the chart and points at it (v0.13.0). */
+    var ttl = cfg.title || 'Concentration–time forecast';
+    var dsc = cfg.desc || ('Predicted concentration over time with a shaded 90% credible interval. ' +
+      'The numeric values are listed in the trough table below this chart.');
+    s.push('<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" ' +
+      'role="img" aria-label="' + escT(ttl) + '" ' +
+      'style="width:100%;height:auto;display:block;font-family:inherit">');
+    s.push('<title>' + escT(ttl) + '</title><desc>' + escT(dsc) + '</desc>');
 
     // plot background
     s.push('<rect x="' + m.l + '" y="' + m.t + '" width="' + iw + '" height="' + ih + '" fill="#fbfdfe" stroke="#e2e8f0"/>');
@@ -2686,12 +3096,15 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
   /* ---- HTML builders (called from ui.js) -------------------------------- */
 
-  function gofPanel(fit, spec, fmtDateFn) {
+  /* hostId: the report renders a SECOND copy of this panel. Both used to emit
+   * id="gofChart", so document.getElementById always resolved the on-screen one
+   * and the report's box was left empty in every printout (fixed v0.13.0). */
+  function gofPanel(fit, spec, fmtDateFn, hostId) {
     var rows = residualRows(fit);
     var chart = gofChart(fit, spec);
     var h = '';
     if (chart) {
-      h += '<div class="diag-chart" id="gofChart"></div>';
+      h += '<div class="diag-chart" id="' + (hostId || 'gofChart') + '"></div>';
       h += '<div class="legend-note">Each point is one measured concentration against the model\u2019s individual prediction at the same time. Points on the diagonal line = the model reproduces the sample. The shaded band is the \u00b12 SD measurement-noise range implied by the assay error model (open points = below LLOQ, handled as censored).</div>';
     }
     h += '<table class="data diag-res"><thead><tr><th>Sample</th><th>Day</th><th>Date</th><th class="num">Observed</th><th class="num">Indiv. pred</th><th class="num">Rel. residual</th></tr></thead><tbody>';
@@ -2806,15 +3219,67 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     running: false
   };
 
+  /* ------------------------ session autosave -----------------------------
+   * An hour of ward data entry used to be lost to an accidental refresh, a
+   * back-swipe on a tablet or a tab eviction: state lived only in this closure.
+   * localStorage is same-origin, stays on the device and never leaves it, so it
+   * is consistent with the app's offline, nothing-transmitted design. The JSON
+   * export remains the way to move a session between machines. (v0.13.0) */
+  var LS_KEY = 'complementtdm.session.v1';
+  var lsOk = (function () {
+    try { var k = '__t'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return true; }
+    catch (e) { return false; }   // private window, blocked site data, etc.
+  })();
+
+  function saveSession() {
+    if (!lsOk) return;
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        v: ECU.VERSION, savedAt: Date.now(),
+        patient: state.patient, drug: state.drug, target: state.target,
+        lloq: state.lloq, errMult: state.errMult,
+        doses: state.doses, obs: state.obs, report: state.report
+      }));
+    } catch (e) { /* quota or serialisation failure must never break the app */ }
+  }
+  function loadSession() {
+    if (!lsOk) return null;
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      var s = JSON.parse(raw);
+      if (!s || (!(s.doses && s.doses.length) && !(s.obs && s.obs.length))) return null;
+      return s;
+    } catch (e) { return null; }
+  }
+  function clearSession() {
+    if (!lsOk) return;
+    try { localStorage.removeItem(LS_KEY); } catch (e) { /* ignore */ }
+  }
+
   // --------------------------- helpers -----------------------------------
   function at9(d) { var x = new Date(d); x.setHours(9, 0, 0, 0); return x.getTime(); }
+  /* The YEAR is deliberately included. Without it a mistyped year (one stray
+   * arrow-press in a datetime-local field) is invisible in every table and in
+   * the printed report, while silently re-anchoring day 0 of the whole fit. */
   function fmtDate(ms) {
     return new Date(ms).toLocaleString('en-GB',
-      { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   function fmtC(v) { return isFinite(v) ? (v >= 100 ? Math.round(v).toString() : (v >= 10 ? v.toFixed(1) : v.toFixed(2))) : '–'; }
   function fmtPct(p) { return isFinite(p) ? Math.round(p * 100) + '%' : '–'; }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  /* A mistyped year in a datetime-local field is one arrow-press away and used
+   * to be invisible everywhere. Challenge anything outside roughly the last
+   * three years to a year ahead, naming the parsed date in full. */
+  function plausibleTime(ms, what) {
+    var now = Date.now();
+    var lo = now - 3 * 365.25 * DAY, hi = now + 365.25 * DAY;
+    if (ms >= lo && ms <= hi) return true;
+    return confirm('That ' + what + ' is dated ' + fmtDate(ms) +
+      ', which is outside the last three years / next year.\n\nIs that date correct?');
+  }
 
   /* Full MAP eta vector as a label/pair list — dimension-agnostic (v0.9.0:
    * crovalimab estimates all 6 PK etas, 2-eta drugs keep the familiar pair). */
@@ -2841,9 +3306,9 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   function shrinkLevel(sv) {
     return sv >= 0.5 ? 'ok' : (sv >= 0.3 ? 'warn' : 'weak');
   }
-  function shrinkBars(fit) {
-    if (!fit || !fit.etaShrinkage || !fit.map || !fit.map.etaNames) return '';
-    var names = fit.map.etaNames, sh = fit.etaShrinkage, out = '';
+  function infoBars(fit) {
+    if (!fit || !fit.etaInformation || !fit.map || !fit.map.etaNames) return '';
+    var names = fit.map.etaNames, sh = fit.etaInformation, out = '';
     for (var i = 0; i < sh.length; i++) {
       if (!isFinite(sh[i])) continue;
       var pc = Math.max(0, Math.min(1, sh[i]));
@@ -2866,6 +3331,12 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + Math.round(p * 100) + '% — intermediate; a dose or interval change may be needed' + ciTxt + '">P ' + Math.round(p * 100) + '%</span>';
     return '<span class="badge bad" data-help="pta" title="Probability ' + Math.round(p * 100) + '% — the target is likely not attained; consider adjusting the dose or interval' + ciTxt + '">P ' + Math.round(p * 100) + '%</span>';
   }
+  /* Dosing intervals are whole days in practice; fmtC would render 14 as
+   * "14.0", which reads like a measured quantity rather than a schedule. */
+  function fmtDays(v) {
+    if (!isFinite(v)) return '?';
+    return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1);
+  }
   function noteHtml(text, kind) {
     return '<div class="note ' + (kind || '') + '">' + text + '</div>';
   }
@@ -2877,6 +3348,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
    * language on purpose; the technical wording remains in the `title`s and
    * the About dialog. */
   var HELP = {
+    ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for other dosing intervals, using the posterior the last run already produced. \u201cNext trough\u201d delays only the next administration; \u201csustained trough\u201d continues the patient on that interval until the concentration settles \u2014 for a drug that accumulates the sustained value is lower, and is usually the one that matters. The app shows the consequences; choosing the regimen remains yours.',
     wt: 'Body weight — the model uses it to adjust clearance and volumes. Enter the current weight in kg.',
     age: 'Age in years — older patients absorb the under-the-skin (SC) dose more slowly. The model uses this to adjust the absorption rate.',
     target: 'The lowest trough you want to keep. The table shows P(> target) — the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
@@ -3062,7 +3534,13 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       el.min = d.min;
       el.max = d.max;
       el.placeholder = 'e.g. ' + d.default;
-      el.step = d.step;
+      /* step="any", NOT the spec's dose granularity. Native constraint
+       * validation runs before the submit handler, so a value off the step grid
+       * silently prevents the dose from ever being added: with crovalimab's
+       * old min=100/step=50 the real 340, 680 and 1020 mg doses were all
+       * rejected with a browser bubble suggesting wrong values. Range is still
+       * checked in JS, where the message is ours (v0.13.0). */
+      el.step = 'any';
     });
     $('ss-interval').value = '';
     $('ss-interval').placeholder = 'e.g. ' + spec.ssIntervalDefault;
@@ -3169,6 +3647,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     if (b) b.style.display = 'block';
     updateRunReady();
     updateStepper();
+    saveSession();   // every mutation goes through here, so this is the autosave point
   }
 
   // ------------------------- schedule modes -------------------------------
@@ -3221,7 +3700,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     var obsRel = [];
     state.obs.forEach(function (o) {
       if (o.t < t0ms - 30 * 60000) { excluded++; return; }
-      obsRel.push({ t: (o.t - t0ms) / DAY, c: o.c, lloq: o.lloq });
+      obsRel.push({ t: (o.t - t0ms) / DAY, c: o.c, lloq: o.lloq, exclude: !!o.exclude, note: o.note || '' });
     });
     obsRel.sort(function (a, b) { return a.t - b.t; });
     return {
@@ -3259,7 +3738,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     var obsRel = [];
     state.obs.forEach(function (o) {
       if (o.t < earliestAllowed - 30 * 60000) { excluded++; return; }
-      obsRel.push({ t: (o.t - A) / DAY, c: o.c, lloq: o.lloq });
+      obsRel.push({ t: (o.t - A) / DAY, c: o.c, lloq: o.lloq, exclude: !!o.exclude, note: o.note || '' });
     });
     obsRel.sort(function (a, b) { return a.t - b.t; });
     var dosesRel = [];
@@ -3457,7 +3936,27 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       series: series,
       points: obsPts,
       legend: legend,
-      hover: { times: grid, rows: rows }
+      hover: { times: grid, rows: rows },
+      /* Text alternative built from the actual forecast, so a screen-reader
+       * user gets the same headline numbers a sighted user reads off the plot. */
+      title: M.drug().label + ' concentration–time forecast',
+      desc: (function () {
+        var f = state.fit;
+        var parts = [M.drug().label + ' predicted concentration over time.'];
+        parts.push(f && f.hasObs
+          ? 'Individualised from ' + (f.obsData ? f.obsData.length : 0) + ' measured concentration(s).'
+          : 'Population forecast — no measurements fitted yet.');
+        var up = f && f.troughs ? f.troughs.filter(function (tr) { return tr.t > rel.nowRel - 0.02; }) : [];
+        if (up.length) {
+          var n = up[0];
+          parts.push('Next trough on day ' + fmtC(n.t) + ': median ' + fmtC(n.med) +
+            ' µg/mL, 90% credible interval ' + fmtC(n.p5) + ' to ' + fmtC(n.p95) +
+            ' µg/mL, probability above the ' + state.target.value + ' µg/mL target ' +
+            Math.round(n.pTarget * 100) + '%.');
+        }
+        parts.push('All predicted troughs are listed in the table below this chart.');
+        return parts.join(' ');
+      })()
     };
     var obsLookup = rel.obsRel.filter(plottable)
       .map(function (o) { return { x: o.t, y: o.c }; });
@@ -3495,13 +3994,13 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       var thalf = isFinite(troughMed) ? M.effHalfLife(pm.params, troughMed) : NaN;
       html += '<div class="kv">' +
         '<span class="k">Clearance CL (L/day)</span><span class="v">' + fmtC(cl.med) +
-        ' <span style="color:#94a3b8;font-weight:400">[' + fmtC(cl.p5) + '–' + fmtC(cl.p95) + ']</span></span>' +
+        ' <span class="ci-range">[' + fmtC(cl.p5) + '–' + fmtC(cl.p95) + ']</span></span>' +
         '<span class="k">Central volume V1 (L)</span><span class="v">' + fmtC(v1.med) +
-        ' <span style="color:#94a3b8;font-weight:400">[' + fmtC(v1.p5) + '–' + fmtC(v1.p95) + ']</span></span>' +
+        ' <span class="ci-range">[' + fmtC(v1.p5) + '–' + fmtC(v1.p95) + ']</span></span>' +
         '<span class="k">Eff. t½ at trough (approx.)</span><span class="v">' + (isFinite(thalf) ? thalf.toFixed(1) + ' d' : '–') + '</span>' +
         '<span class="k">' + etaLabel(pm) + ' (MAP)</span><span class="v">' + fmtEtaVec(pm) + '</span>' +
         '</div>';
-      html += shrinkBars(fit);
+      html += infoBars(fit);
       // v0.10.0: collapsed diagnostics block (GOF residuals + EBE forest),
       // progressive disclosure — the card stays clean unless opened.
       if (D && fit.obsData && fit.obsData.length) {
@@ -3536,6 +4035,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     }
     pb.innerHTML = html;
     renderDiagnostics(fit, rel);
+    showIntervalCard();
 
     // troughs
     var thr = '';
@@ -3547,15 +4047,21 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
         '<th class="num" title="Probability that the true trough stays above the target, given the fitted posterior for this patient">P(&gt; ' + state.target.value + ' µg/mL)</th></tr></thead><tbody>';
       fit.troughs.forEach(function (tr) {
         var future = tr.t > rel.nowRel - 0.02;
-        thr += '<tr class="' + (future ? '' : 'past') + '">' +
+        thr += '<tr class="' + (future ? '' : 'past') + (tr.assumed ? ' assumed' : '') + '">' +
           '<td>' + fmtC(tr.t) + '</td>' +
-          '<td>' + fmtDate(rel.t0ms + tr.t * DAY) + '</td>' +
-          '<td class="num">' + fmtC(tr.med) + ' <span style="color:#94a3b8">[' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</span></td>' +
+          '<td>' + fmtDate(rel.t0ms + tr.t * DAY) +
+          (tr.assumed ? ' <span class="tag-assumed" title="No dose was entered at this time. The app assumed the next administration falls one interval (q' +
+            fmtDays(fit.interval) + ' d) after the last entered dose.">assumed dose</span>' : '') + '</td>' +
+          '<td class="num">' + fmtC(tr.med) + ' <span class="ci-range">[' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</span></td>' +
           '<td class="num">' + ptaBadge(tr.pTarget, tr.pCI) + '</td>' +
           '</tr>';
       });
       thr += '</tbody></table>';
-      thr += '<div class="legend-note">Trough just before each dose · P = chance the true trough exceeds ' + state.target.value + ' µg/mL (hover a badge for details).</div>';
+      thr += '<div class="legend-note">Trough just before each dose · median [5–95%] is a <b>credible interval for the true concentration</b> (it does not include assay error, so a future measured value may fall outside it) · P = chance the true trough exceeds ' + state.target.value + ' µg/mL (hover a badge for details).</div>';
+      if (fit.troughs.some(function (tr) { return tr.assumed; })) {
+        thr += '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
+          ' d) after the last entered dose — enter the actual planned doses, or use Steady state mode, to model a different interval.</div>';
+      }
     } else {
       thr = '<div class="note">Add planned doses to see predicted troughs.</div>';
     }
@@ -3573,6 +4079,31 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     if (state.lloq > 0) {
       ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
     }
+    /* v0.13.0 diagnostics that must not stay silent: an excluded sample changes
+     * what the fit is based on, and a non-converged optimiser or unmixed chain
+     * means the individual estimate itself may be wrong. */
+    if (fit.nExcluded > 0) {
+      ad.push(noteHtml(fit.nExcluded + ' sample' + (fit.nExcluded > 1 ? 's are' : ' is') +
+        ' excluded from the fit — shown on the chart and in the report, but not used to estimate this patient\'s parameters.', 'info'));
+    }
+    if (fit.map && fit.map.converged === false) {
+      ad.push(noteHtml('The parameter search did not fully converge. Treat the individual estimates and the bands with caution, and check the entered doses and sample times.', 'warn'));
+    }
+    if (fit.map && fit.map.startGap > 1) {
+      ad.push(noteHtml('The parameter search reached different solutions from different starting points (objective-function gap ' +
+        fmtC(fit.map.startGap) + '). The samples may not identify this patient uniquely — an additional sample at a different time would help.', 'warn'));
+    }
+    if (fit.rhat && fit.rhat.length) {
+      var badR = [];
+      var rnames = (fit.map && fit.map.etaNames) || [];
+      for (var ri = 0; ri < fit.rhat.length; ri++) {
+        if (fit.rhat[ri] != null && fit.rhat[ri] > 1.05) badR.push(rnames[ri] || ('eta' + (ri + 1)));
+      }
+      if (badR.length) {
+        ad.push(noteHtml('The posterior sampler did not fully mix for ' + esc(badR.join(', ')) +
+          ' (R-hat > 1.05). The reported intervals for those parameters may be unreliable — re-run, or add a sample.', 'warn'));
+      }
+    }
     if (!state.obs.length) {
       ad.push(noteHtml('Add measured concentrations to individualize the forecast.', 'info'));
     }
@@ -3581,11 +4112,11 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     // for that parameter — the honest response when SC troughs cannot separate
     // e.g. absorption from clearance. Surface a gentle sampling hint, not a
     // warning: the forecast is still valid, just prior-anchored.
-    if (fit.hasObs && fit.etaShrinkage && fit.map && fit.map.etaNames) {
+    if (fit.hasObs && fit.etaInformation && fit.map && fit.map.etaNames) {
       var names = fit.map.etaNames;
       var weak = [];
-      for (var ei = 0; ei < fit.etaShrinkage.length; ei++) {
-        if (fit.etaShrinkage[ei] < 0.3 && ei < names.length) weak.push(names[ei]);
+      for (var ei = 0; ei < fit.etaInformation.length; ei++) {
+        if (fit.etaInformation[ei] < 0.3 && ei < names.length) weak.push(names[ei]);
       }
       if (weak.length) {
         var weakTxt = weak.length === 1 ? weak[0] : weak.join(', ').replace(/, ([^,]*)$/, ' and $1');
@@ -3597,8 +4128,8 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
 
   /* v0.10.0 — diagnostics rendering: GOF scatter (SVG via chart.js) inside the
    * details block + hover sync between scatter points and residual rows. */
-  function renderDiagnostics(fit, rel) {
-    var host = document.getElementById('gofChart');
+  function renderDiagnostics(fit, rel, hostId) {
+    var host = document.getElementById(hostId || 'gofChart');
     if (!host) return;
     var D = ECU.diagnostics;
     var cfg = D.gofChart(fit, M.drug());
@@ -3635,12 +4166,12 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   function renderDoses() {
     var tb = $('doseTable');
     if (currentMode() === 'ss') {
-      tb.innerHTML = '<tr><td style="color:#94a3b8;padding:8px 4px">Regimen defined above (fixed dose + interval at steady state). Switch to “Full schedule” to see and edit individual doses.</td></tr>';
+      tb.innerHTML = '<tr><td class="empty-cell">Regimen defined above (fixed dose + interval at steady state). Switch to “Full schedule” to see and edit individual doses.</td></tr>';
       return;
     }
     state.doses.sort(function (a, b) { return a.t - b.t; });
     if (!state.doses.length) {
-      tb.innerHTML = '<tr><td style="color:#94a3b8;padding:8px 4px">No doses entered yet — add the actual dose dates and amounts below.</td></tr>';
+      tb.innerHTML = '<tr><td class="empty-cell">No doses entered yet — add the actual dose dates and amounts below.</td></tr>';
       return;
     }
     var t0 = state.doses[0].t;
@@ -3671,7 +4202,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   function renderObs() {
     var tb = $('obsTable');
     if (!state.obs.length) {
-      tb.innerHTML = '<tr><td style="color:#94a3b8;padding:8px 4px">No measurements yet.</td></tr>';
+      tb.innerHTML = '<tr><td class="empty-cell">No measurements yet.</td></tr>';
       return;
     }
     var t0 = null;
@@ -3680,14 +4211,23 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       if (ss0) t0 = ss0.A;
     }
     if (t0 == null) t0 = state.doses.length ? state.doses[0].t : (state.obs[0].t);
-    var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Conc (µg/mL)</th><th></th></tr></thead><tbody>';
+    var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Conc (µg/mL)</th>' +
+      '<th class="num">In fit</th><th></th></tr></thead><tbody>';
     state.obs.forEach(function (o, i) {
       var concCell = o.lloq
         ? '&lt; ' + (state.lloq || 'LLOQ')
         : '<b>' + fmtC(o.c) + '</b>';
-      h += '<tr><td>' + fmtC((o.t - t0) / DAY) + '</td><td>' + fmtDate(o.t) + '</td>' +
+      h += '<tr' + (o.exclude ? ' class="obs-ex"' : '') + '><td>' + fmtC((o.t - t0) / DAY) + '</td><td>' + fmtDate(o.t) + '</td>' +
         '<td class="num">' + concCell + '</td>' +
+        '<td class="num"><label class="check" style="margin:0;justify-content:flex-end" ' +
+        'title="Untick to keep this sample on record but exclude it from the fit — e.g. drawn after plasma exchange, apheresis or CRRT, or with a known pre-analytical problem">' +
+        '<input type="checkbox" data-fitobs="' + i + '"' + (o.exclude ? '' : ' checked') + '></label></td>' +
         '<td class="num"><button class="linklike" data-rmobs="' + i + '" title="Remove this measurement">remove</button></td></tr>';
+      if (o.exclude) {
+        h += '<tr class="obs-ex"><td colspan="5" style="padding-top:0">' +
+          '<input type="text" class="obs-note" data-noteobs="' + i + '" maxlength="80" ' +
+          'placeholder="Reason this sample is excluded (shown in the report)" value="' + esc(o.note || '') + '"></td></tr>';
+      }
     });
     h += '</tbody>';
     tb.innerHTML = h;
@@ -3695,6 +4235,22 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       el.addEventListener('click', function () {
         state.obs.splice(parseInt(el.getAttribute('data-rmobs'), 10), 1);
         renderObs(); markStale();
+      });
+    });
+    /* v0.13.0 — excluding rather than deleting keeps the sample visible on the
+     * chart and in the printed report while removing it from the likelihood.
+     * Deleting it would lose the record of why it was disregarded. */
+    Array.prototype.forEach.call(tb.querySelectorAll('[data-fitobs]'), function (el) {
+      el.addEventListener('change', function () {
+        var idx = parseInt(el.getAttribute('data-fitobs'), 10);
+        state.obs[idx].exclude = !el.checked;
+        renderObs(); markStale(); saveSession();
+      });
+    });
+    Array.prototype.forEach.call(tb.querySelectorAll('[data-noteobs]'), function (el) {
+      el.addEventListener('input', function () {
+        state.obs[parseInt(el.getAttribute('data-noteobs'), 10)].note = el.value;
+        saveSession();
       });
     });
   }
@@ -3709,7 +4265,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       mode: currentMode(),
       ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString() } : null,
       doses: state.doses.map(function (d) { return { t: new Date(d.t).toISOString(), amt: d.amt, route: d.route }; }),
-      obs: state.obs.map(function (o) { return { t: new Date(o.t).toISOString(), c: o.c, lloq: o.lloq }; })
+      obs: state.obs.map(function (o) { return { t: new Date(o.t).toISOString(), c: o.c, lloq: o.lloq, exclude: !!o.exclude, note: o.note || '' }; })
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
@@ -3854,14 +4410,30 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       var amt = parseFloat($('dose-amt').value);
       var dl = M.drug().dose;
       if (!isFinite(t)) { alert('Enter a valid dose date & time.'); return; }
-      if (!(amt >= dl.min && amt <= dl.max)) { alert('Dose must be between ' + dl.min + ' and ' + dl.max + ' mg.'); return; }
+      if (!plausibleTime(t, 'dose')) return;
+      if (!(amt >= dl.min && amt <= dl.max)) { alert('Dose must be between ' + dl.min + ' and ' + dl.max + ' mg for ' + M.drug().label + '.'); return; }
+      // Non-blocking order-of-magnitude challenge: a transposed dose stays
+      // inside the permitted range, so the range check alone will not catch it.
+      if (state.doses.length) {
+        var amts = state.doses.map(function (d) { return d.amt; }).sort(function (a, b) { return a - b; });
+        var medD = amts[Math.floor(amts.length / 2)];
+        if (medD > 0 && (amt > 3 * medD || amt < medD / 3)) {
+          if (!confirm('This dose (' + amt + ' mg) differs about ' +
+            (amt > medD ? Math.round(amt / medD) : Math.round(medD / amt)) +
+            '-fold from the other doses in the schedule (' + medD + ' mg).\n\nAdd it anyway?')) return;
+        }
+      }
       var route = null;
       var ar = M.drug().adminRoutes;
       if (ar) {
         var rv = $('dose-route').value;
         route = (rv === 'iv' || rv === 'sc') ? rv : (state.doses.length === 0 ? ar.first : ar.subsequent);
       }
+      // Duplicate guard: two clicks on "Add dose" silently doubled the amount
+      var dup = state.doses.some(function (d) { return Math.abs(d.t - t) < 5 * 60000; });
+      if (dup && !confirm('A dose is already recorded within five minutes of that time.\n\nAdd a second one anyway?')) return;
       state.doses.push({ t: t, amt: amt, route: route });
+      $('dose-amt').value = '';
       renderDoses(); markStale();
     });
     $('obsForm').addEventListener('submit', function (e) {
@@ -3871,14 +4443,45 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       var c = parseFloat(cRaw);
       var below = $('obs-lloq').checked;
       if (!isFinite(t)) { alert('Enter a valid date & time for the measurement.'); return; }
+      if (!plausibleTime(t, 'measurement')) return;
       // A '< LLOQ' sample may be entered without a numeric value (only the flag
       // matters for the M3 likelihood); a quantified sample needs a value.
       if (!below && !(c >= 0)) { alert('Enter a valid concentration.'); return; }
       if (below && cRaw !== '' && !(c >= 0)) { alert('Enter a valid concentration, or leave the field empty for a below-LLOQ sample.'); return; }
-      if (below && !(state.lloq > 0)) { alert('Tick LLOQ usage: first enter an LLOQ value in the patient card.'); return; }
-      state.obs.push({ t: t, c: below && cRaw === '' ? null : c, lloq: below });
+      if (below && !(state.lloq > 0)) {
+        /* The LLOQ lives in the collapsed "Advanced options (assay)" fold in the
+         * Forecast card, not the patient card — the old message sent the user to
+         * the wrong place. Open the fold and focus the field instead. */
+        var advEl = $('advancedForecast');
+        if (advEl) { advEl.open = true; }
+        var lq = $('pt-lloq');
+        if (lq) { lq.focus(); }
+        alert('A below-LLOQ sample needs the assay LLOQ. It is under “Advanced options (assay)” in the Forecast card — now opened for you.');
+        return;
+      }
+      var maxC = (M.drug().obsValMax || 2000);
+      if (!below && c > maxC) { alert('That concentration (' + c + ' µg/mL) is above the plausible range for ' + M.drug().label + ' (max ' + maxC + ' µg/mL). Check for a decimal or unit error — the app expects µg/mL (= mg/L).'); return; }
+      // Non-blocking order-of-magnitude challenge against the other samples:
+      // a 10x transposition lands inside the permitted range in this field.
+      if (!below && isFinite(c) && state.obs.length) {
+        var prev = state.obs.filter(function (o) { return !o.lloq && isFinite(o.c) && o.c > 0; });
+        if (prev.length) {
+          var med = prev.map(function (o) { return o.c; }).sort(function (a, b) { return a - b; })[Math.floor(prev.length / 2)];
+          if (med > 0 && (c > 8 * med || c < med / 8)) {
+            if (!confirm('This measurement (' + fmtC(c) + ' µg/mL) differs about ' +
+              (c > med ? Math.round(c / med) : Math.round(med / c)) + '-fold from the other samples (median ' +
+              fmtC(med) + ' µg/mL).\n\nAdd it anyway?')) return;
+          }
+        }
+      }
+      state.obs.push({ t: t, c: below && cRaw === '' ? null : c, lloq: below, exclude: false, note: '' });
+      $('obs-val').value = '';
+      $('obs-lloq').checked = false;
       renderObs(); markStale();
     });
+
+    var ivBtn = $('iv-run');
+    if (ivBtn) ivBtn.addEventListener('click', function () { runIntervalScan(); });
 
     $('btnExport').addEventListener('click', exportJson);
     $('btnImport').addEventListener('click', function () { $('importFile').click(); });
@@ -3927,15 +4530,189 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     renderDoses();
     renderObs();
     showEmpty();
+    offerRestore();
+    // Warn before losing unsaved entry. Autosave makes this recoverable, but a
+    // deliberate confirmation still prevents the most common data loss.
+    window.addEventListener('beforeunload', function (e) {
+      if (state.doses.length || state.obs.length) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
+
+  /* Offer to restore an autosaved session rather than silently reinstating it:
+   * silently loading another patient's data into a blank-looking form would be
+   * far worse than losing it. */
+  function offerRestore() {
+    var s = loadSession();
+    if (!s) return;
+    var bar = document.getElementById('restoreBar');
+    if (!bar) return;
+    var when = fmtDate(s.savedAt || Date.now());
+    var who = s.patient && s.patient.code ? ' (' + esc(s.patient.code) + ')' : '';
+    document.getElementById('restoreText').innerHTML =
+      'An unsaved session from ' + esc(when) + who + ' was found on this device — ' +
+      esc(String((s.doses || []).length)) + ' dose(s), ' + esc(String((s.obs || []).length)) + ' measurement(s).';
+    bar.hidden = false;
+    document.getElementById('restoreYes').onclick = function () {
+      applySession(s); bar.hidden = true;
+    };
+    document.getElementById('restoreNo').onclick = function () {
+      clearSession(); bar.hidden = true;
+    };
+  }
+
+  function applySession(s) {
+    state.patient = s.patient || state.patient;
+    state.drug = M.drugs[s.drug] ? s.drug : state.drug;
+    state.target = s.target || { value: null };
+    state.lloq = s.lloq != null ? s.lloq : null;
+    state.errMult = s.errMult || 1;
+    state.doses = (s.doses || []).slice();
+    state.obs = (s.obs || []).slice();
+    state.report = s.report || { preparedBy: '', advice: '' };
+    state.fit = null;
+    M.select(state.drug);
+    var sel = $('pt-drug'); if (sel) sel.value = state.drug;
+    syncInputs();
+    applyDrugUI();
+    renderDoses();
+    renderObs();
+    showEmpty();
   }
 
   function showEmpty() {
     $('chart').innerHTML = '<div class="note">Enter the dosing schedule and press “Run forecast” to see the concentration–time plot.</div>';
     $('fitStatus').innerHTML = '<div class="note">Enter the patient, add the actual doses (and measurements if available), then press “Run forecast”.</div>';
     $('paramBlock').innerHTML = $('troughBlock').innerHTML = $('advisoryBlock').innerHTML = '';
+    var ivCard = $('intervalCard');
+    if (ivCard) { ivCard.hidden = true; ivCard.open = false; $('iv-out').innerHTML = ''; }
     $('staleBanner').style.display = 'none';
     updateRunReady();
     updateStepper();
+  }
+
+  /* ------------------ dose-interval explorer (v0.13.0) --------------------
+   * Routine TDM on these agents is mostly about prolonging the interval. The
+   * posterior does not depend on the future schedule, so every candidate
+   * interval is evaluated from the draws the fit already produced — a second
+   * or so, instead of hand-entering future doses and refitting once per
+   * candidate. It displays consequences; the regimen choice stays with the
+   * clinician, and no interval is marked as recommended. */
+  function intervalExplorerAvailable() {
+    return !!(state.fit && state.fit.draws && state.fit.draws.length && state.fit.rel &&
+              state.fit.rel.dosesRel && state.fit.rel.dosesRel.length);
+  }
+
+  function showIntervalCard() {
+    var card = $('intervalCard');
+    if (!card) return;
+    if (!intervalExplorerAvailable()) { card.hidden = true; return; }
+    card.hidden = false;
+    var rel = state.fit.rel;
+    var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
+    var amtEl = $('iv-amt');
+    if (amtEl && !amtEl.value) amtEl.value = lastAmt;
+    $('iv-out').innerHTML = '<div class="note">Press “Explore intervals” to see what this patient’s fitted parameters predict for shorter and longer dosing intervals.</div>';
+  }
+
+  async function runIntervalScan() {
+    if (!intervalExplorerAvailable()) return;
+    var fit = state.fit, rel = fit.rel;
+    var amt = parseFloat($('iv-amt').value);
+    var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
+    if (!(amt > 0)) { amt = lastAmt; $('iv-amt').value = amt; }
+    var dl = M.drug().dose;
+    if (!(amt >= dl.min && amt <= dl.max)) {
+      alert('Dose must be between ' + dl.min + ' and ' + dl.max + ' mg for ' + M.drug().label + '.');
+      return;
+    }
+    var btn = $('iv-run');
+    btn.disabled = true;
+    $('iv-status').textContent = 'calculating…';
+    try {
+      var ivs = B.candidateIntervals(fit.interval);
+      var scan = await B.intervalScan({
+        draws: fit.draws, doses: rel.dosesRel,
+        wt: fit.wt, disease: fit.disease, age: fit.age, drug: state.drug,
+        target: state.target.value, amt: amt, intervals: ivs,
+        onProgress: function (f) { $('iv-status').textContent = 'calculating… ' + Math.round(f * 100) + '%'; }
+      });
+      state.fit.intervalScan = { amt: amt, rows: scan, current: fit.interval };
+      renderIntervalScan();
+    } catch (e) {
+      $('iv-out').innerHTML = noteHtml('Could not evaluate the intervals: ' + esc(e.message), 'warn');
+    } finally {
+      btn.disabled = false;
+      $('iv-status').textContent = '';
+    }
+  }
+
+  function renderIntervalScan() {
+    var sc = state.fit && state.fit.intervalScan;
+    if (!sc || !sc.rows.length) return;
+    var tgt = state.target.value;
+    var cur = sc.current;
+    var h = '';
+
+    /* Two curves, because they answer different questions and can disagree
+     * sharply for a drug that accumulates: delaying ONE dose is often still
+     * above target when CONTINUING at that interval is not. */
+    var cfg = {
+      width: 560, height: 260,
+      xMin: sc.rows[0].interval, xMax: sc.rows[sc.rows.length - 1].interval,
+      yMin: 0, yMax: 100,
+      xLabel: 'Dosing interval (days)',
+      yLabel: 'P(trough > ' + tgt + ' µg/mL)  %',
+      series: [
+        { x: sc.rows.map(function (r) { return r.interval; }),
+          y: sc.rows.map(function (r) { return r.ss.pTarget * 100; }),
+          color: '#0e7490', width: 2.2 },
+        { x: sc.rows.map(function (r) { return r.interval; }),
+          y: sc.rows.map(function (r) { return r.next.pTarget * 100; }),
+          color: '#64748b', width: 1.8, dash: '5 4' }
+      ],
+      points: sc.rows.map(function (r) {
+        return { x: r.interval, y: r.ss.pTarget * 100, color: '#0e7490' };
+      }),
+      vlines: [{ x: cur, color: '#b45309', dash: '4 4' }],
+      legend: [
+        { label: 'Continuing at this interval', color: '#0e7490', swatch: 'line' },
+        { label: 'Delaying the next dose only', color: '#64748b', swatch: 'line', dash: '5 4' },
+        { label: 'Current interval (q' + fmtDays(cur) + 'd)', color: '#b45309', swatch: 'line', dash: '4 4' }
+      ],
+      title: 'Probability of staying above target by dosing interval',
+      desc: 'Probability that the trough stays above ' + tgt + ' µg/mL for each candidate dosing interval, ' +
+            'both if the patient is continued on that interval and if only the next dose is delayed. ' +
+            'The values are listed in the table below the chart.'
+    };
+    h += '<div class="iv-chart" id="ivChart"></div>';
+
+    h += '<table class="data iv-table"><thead><tr>' +
+      '<th>Interval</th>' +
+      '<th class="num" title="Trough before the next administration if only that dose is delayed to this interval">Next trough [5–95%]</th>' +
+      '<th class="num">P(&gt; ' + tgt + ')</th>' +
+      '<th class="num" title="Trough once the patient has been continued on this interval long enough to re-approach steady state">Sustained trough [5–95%]</th>' +
+      '<th class="num">P(&gt; ' + tgt + ')</th>' +
+      '</tr></thead><tbody>';
+    sc.rows.forEach(function (r) {
+      var isCur = Math.abs(r.interval - cur) < 0.5;
+      h += '<tr class="' + (isCur ? 'iv-current' : '') + '">' +
+        '<td>q' + fmtDays(r.interval) + 'd' + (isCur ? ' <span class="tag-current">current</span>' : '') + '</td>' +
+        '<td class="num">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
+        '<td class="num">' + ptaBadge(r.next.pTarget) + '</td>' +
+        '<td class="num">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
+        '<td class="num">' + ptaBadge(r.ss.pTarget) + '</td>' +
+        '</tr>';
+    });
+    h += '</tbody></table>';
+    h += '<div class="legend-note"><b>Next trough</b> = only the next administration is delayed. ' +
+      '<b>Sustained trough</b> = the patient is continued on that interval until the concentration settles; ' +
+      'for a drug that accumulates this is the lower, and usually the decision-relevant, number. ' +
+      'Both use the parameters fitted to this patient, at ' + fmtC(sc.amt) + ' mg per administration.</div>';
+    h += noteHtml('This shows what the model predicts for each interval. It is not a recommendation — ' +
+      'the choice of regimen, and the decision to act on it, remain yours.', 'info');
+
+    $('iv-out').innerHTML = h;
+    try { C.render(document.getElementById('ivChart'), cfg); } catch (e) { /* table still stands */ }
   }
 
   // ------------------------------ About -----------------------------------
@@ -3945,6 +4722,34 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       '<p><b>For research purposes only — not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in your browser — no data is transmitted or stored.</p>';
     h += '<h3>Models</h3>';
     h += '<p class="src">For each model, assumptions and simplifications relative to its source are listed — read them before clinical interpretation.</p>';
+    h += '<h3>Trough targets</h3>' +
+      '<p>Each drug\'s default target is prefilled from the source below and can be overridden per patient. ' +
+      'The target is the only number that turns a PK forecast into a clinical judgement, so its provenance is stated explicitly.</p>' +
+      '<ul class="about-list">';
+    M.listDrugs().forEach(function (d) {
+      var sp = M.spec(d.id);
+      if (!sp.targetDefault) return;
+      h += '<li><b>' + esc(sp.label) + '</b> — ' + esc(String(sp.targetDefault)) + ' µg/mL. ' +
+        esc(sp.targetHint || '') +
+        (sp.targetSource ? ' ' + esc(sp.targetSource) : '') +
+        (sp.targetSourceUrl ? ' <a href="' + esc(sp.targetSourceUrl) + '" target="_blank" rel="noopener">source</a>' : '') +
+        '</li>';
+    });
+    h += '</ul>';
+    h += '<h3>How between-occasion variability (IOV) is handled</h3>' +
+      '<p>For eculizumab in aHUS the source model carries between-occasion variability on clearance ' +
+      '(variance 0.112) in addition to between-patient variability (0.1546). From the sparse samples of a ' +
+      'single patient these two cannot be told apart, so this app <b>folds the occasion variance into the ' +
+      'clearance prior</b> (giving 0.2666) and treats multi-occasion samples as one exchangeable block. ' +
+      'That is the correct marginal prior for the occasion being fitted, and it is the approach described ' +
+      'for MAP-Bayesian forecasting with IOV ' +
+      '(<a href="https://bpspubs.onlinelibrary.wiley.com/doi/10.1111/bcp.13901" target="_blank" rel="noopener">Br J Clin Pharmacol, doi:10.1111/bcp.13901</a>).</p>' +
+      '<p><b>What this means for the forecast.</b> Occasion-level random effects are not estimated separately, ' +
+      'and the occasion component stays folded in after fitting. Because the reported trough is the one before ' +
+      'the <i>next</i> dose — a future occasion — its interval is therefore somewhat narrower than the full ' +
+      'occasion-to-occasion predictive uncertainty. Re-sample around flares, regimen changes and any event ' +
+      'that could shift clearance, rather than relying on a forecast projected far ahead.</p>' +
+      '<p>PNH (eculizumab), ravulizumab and crovalimab have no IOV term in their source models, so nothing is folded in for them.</p>';
     M.listDrugs().forEach(function (d) {
       var s = M.spec(d.id);
       h += '<div class="about-model"><b>' + esc(s.label) + '</b>' +
@@ -3979,14 +4784,56 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       '<p>Research group: <a href="https://www.radboudumc.nl/en/research/research-groups/applied-pharmacometrics" target="_blank" rel="noopener">Radboud Applied Pharmacometrics</a>, Radboudumc, Nijmegen.</p>';
     return h;
   }
+  /* ---- modal focus management (v0.13.0) --------------------------------
+   * The dialogs previously only toggled `hidden`: a keyboard or screen-reader
+   * user who pressed "Print report" stayed focused behind the backdrop and
+   * tabbed through an invisible page, unable to reach the Advice textarea.
+   * These helpers move focus in, trap Tab inside the dialog, mark the rest of
+   * the page aria-hidden, and restore focus to the trigger on close. */
+  var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  var modalReturn = null, modalTrap = null;
+
+  function openModal(id, focusId) {
+    var el = $(id);
+    if (!el) return;
+    modalReturn = document.activeElement;
+    el.hidden = false;
+    document.body.style.overflow = 'hidden';
+    var main = document.querySelector('main');
+    if (main) main.setAttribute('aria-hidden', 'true');
+    var first = focusId && $(focusId) ? $(focusId) : el.querySelector(FOCUSABLE);
+    if (first) { try { first.focus(); } catch (e) { /* ignore */ } }
+    modalTrap = function (e) {
+      if (e.key !== 'Tab') return;
+      var f = Array.prototype.filter.call(el.querySelectorAll(FOCUSABLE), function (n) {
+        return n.offsetParent !== null || n === document.activeElement;
+      });
+      if (!f.length) return;
+      var a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    };
+    el.addEventListener('keydown', modalTrap);
+  }
+
+  function closeModal(id) {
+    var el = $(id);
+    if (!el) return;
+    if (modalTrap) { el.removeEventListener('keydown', modalTrap); modalTrap = null; }
+    el.hidden = true;
+    document.body.style.overflow = '';
+    var main = document.querySelector('main');
+    if (main) main.removeAttribute('aria-hidden');
+    if (modalReturn && modalReturn.focus) { try { modalReturn.focus(); } catch (e) { /* ignore */ } }
+    modalReturn = null;
+  }
+
   function openAbout() {
     $('aboutBody').innerHTML = aboutHtml();
-    $('aboutModal').hidden = false;
-    document.body.style.overflow = 'hidden';
+    openModal('aboutModal', 'aboutClose');
   }
   function closeAbout() {
-    $('aboutModal').hidden = true;
-    document.body.style.overflow = '';
+    closeModal('aboutModal');
   }
 
   // --------------------------- print report --------------------------------
@@ -4004,12 +4851,11 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     }
     $('rp-prepared').value = state.report.preparedBy;
     $('rp-advice').value = state.report.advice;
-    $('reportModal').hidden = false;
+    openModal('reportModal', 'rp-prepared');
     document.body.style.overflow = 'hidden';
   }
   function closeReportDialog() {
-    $('reportModal').hidden = true;
-    document.body.style.overflow = '';
+    closeModal('reportModal');
   }
   function generateReport() {
     state.report.preparedBy = $('rp-prepared').value.trim();
@@ -4017,6 +4863,13 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     closeReportDialog();
     $('reportSheet').innerHTML = reportHtml();
     $('reportSheet').hidden = false;
+    /* The report's GOF scatter is an empty div until something draws into it.
+     * Render into the report's own host (rpGofChart) — before v0.13.0 both
+     * copies shared one id, so only the on-screen one was ever filled and the
+     * printed page showed an empty bordered box. */
+    if (state.fit && state.fit.rel && state.fit.hasObs) {
+      try { renderDiagnostics(state.fit, state.fit.rel, 'rpGofChart'); } catch (e) { /* never block printing */ }
+    }
     // give the browser a frame to lay out the sheet before print
     requestAnimationFrame(function () { window.print(); });
   }
@@ -4078,7 +4931,9 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     // 1 — header
     h += '<div class="rp-head">';
     h += '<div class="rp-title">Therapeutic drug monitoring report — ' + esc(spec.label) + '</div>';
-    h += '<div class="rp-sub">Generated ' + fmtDate(Date.now()) + ' · ' + esc(spec.article) + '</div>';
+    h += '<div class="rp-sub">Generated ' + fmtDate(Date.now()) +
+      ' · complementtdm v' + esc(ECU.VERSION) +
+      ' · model: ' + esc(spec.label) + ' — ' + esc(spec.article) + '</div>';
     h += '</div>';
 
     // 2 — patient & data
@@ -4088,7 +4943,8 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     if (spec.covariateAge) h += '<tr><td>Age</td><td>' + st.patient.age + ' years (covariate of the absorption rate)</td></tr>';
     if (spec.diseaseCovariate) h += '<tr><td>Disease</td><td>' + esc(st.patient.disease) + '</td></tr>';
     h += '<tr><td>Trough target</td><td>' + st.target.value + ' µg/mL' +
-      (st.target.value === spec.targetDefault ? ' (drug default)' : '') + '</td></tr>';
+      (st.target.value === spec.targetDefault ? ' (drug default)' : '') +
+      (spec.targetSource ? '<br><span class="rp-src">' + esc(spec.targetSource) + '</span>' : '') + '</td></tr>';
     if (st.lloq > 0) h += '<tr><td>Assay LLOQ</td><td>' + st.lloq + ' µg/mL (samples &lt; LLOQ handled with the M3 method)</td></tr>';
     if ((st.errMult || 1) !== 1) h += '<tr><td>Assay error multiplier</td><td>' + st.errMult + '</td></tr>';
     h += '</table>';
@@ -4140,20 +4996,20 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       h += '<tr><td>Clearance (posterior)</td><td>' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) + ']</td></tr>';
       h += '<tr><td>Central volume (posterior)</td><td>' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + ']</td></tr>';
       h += '<tr><td>Random effects ' + etaLabel(fit.map) + '</td><td>' + fmtEtaVec(fit.map) + '</td></tr>';
-      if (fit.etaShrinkage && fit.map.etaNames) {
+      if (fit.etaInformation && fit.map.etaNames) {
         var shParts = [];
-        for (var si = 0; si < fit.etaShrinkage.length; si++) {
-          shParts.push(fit.map.etaNames[si] + ' ' + Math.round(fit.etaShrinkage[si] * 100) + '%');
+        for (var si = 0; si < fit.etaInformation.length; si++) {
+          shParts.push(fit.map.etaNames[si] + ' ' + Math.round(fit.etaInformation[si] * 100) + '%');
         }
         h += '<tr><td>Random effects informed by the samples (100% = fully determined)</td><td>' + shParts.join(', ') + '</td></tr>';
-        var bars = shrinkBars(fit);
+        var bars = infoBars(fit);
         if (bars) h += '<tr><td colspan="2"><div class="rp-shrink">' +
-          '<div class="rp-shrink-h">Data-informativeness per parameter (shrinkage visual)</div>' + bars + '</div></td></tr>';
+          '<div class="rp-shrink-h">Data-informativeness per parameter (100% = determined by the samples, 0% = population prior)</div>' + bars + '</div></td></tr>';
         // v0.10.0: individual GOF — residual table + EBE forest in the report
         if (D && fit.obsData && fit.obsData.length) {
           h += '<tr><td colspan="2"><div class="rp-diag">' +
             '<div class="rp-shrink-h">Individual fit diagnostics</div>' +
-            D.gofPanel(fit, M.drug(), function (t) { return fmtDate(rel.t0ms + t * DAY); }) +
+            D.gofPanel(fit, M.drug(), function (t) { return fmtDate(rel.t0ms + t * DAY); }, 'rpGofChart') +
             '<div class="rp-shrink-h" style="margin-top:8px">This patient vs the population (empirical Bayes estimates)</div>' +
             D.ebePanel(fit, M.drug()) + '</div></td></tr>';
         }
@@ -4169,17 +5025,28 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
     var svgBox = typeof document !== 'undefined' ? document.getElementById('chart') : null;
     var svg = svgBox ? svgBox.querySelector('svg') : null;
     h += '<div class="rp-chart">' + (svg ? svg.outerHTML : '<p class="rp-note">(chart not available)</p>') + '</div>';
-    h += '<div class="rp-legend">Solid line: median predicted concentration · shaded band: 5–95% prediction interval · red points: measured concentrations · dashed horizontal line: trough target (' +
+    h += '<div class="rp-legend">Solid line: median predicted concentration · shaded band: 90% credible interval for the true concentration (residual assay error not included) · red points: measured concentrations · dashed horizontal line: trough target (' +
       st.target.value + ' µg/mL).</div>';
     if (fit.troughs.length) {
-      h += '<table class="rp-table"><thead><tr><th>Day</th><th>Date</th><th class="num">Median trough [5–95%] (µg/mL)</th><th class="num">P(&gt; ' +
+      h += '<table class="rp-table"><thead><tr><th>Day</th><th>Date</th><th>Status</th><th class="num">Median trough [5–95%] (µg/mL)</th><th class="num">P(&gt; ' +
         st.target.value + ' µg/mL)</th></tr></thead><tbody>';
+      var nowRelR = rel.nowRel != null ? rel.nowRel : 0;
       fit.troughs.forEach(function (tr) {
-        h += '<tr><td>' + fmtC(tr.t) + '</td><td>' + fmtDate(rel.t0ms + tr.t * DAY) + '</td>' +
+        /* The reader of the record must be able to tell which line is the
+         * decision-relevant one, and which assumes a dose nobody has scheduled. */
+        var status = tr.assumed
+          ? '<b>assumed next dose</b> (q' + fmtDays(fit.interval) + 'd)'
+          : (tr.t <= nowRelR ? 'past' : 'upcoming');
+        h += '<tr' + (tr.assumed ? ' class="rp-assumed"' : '') + '><td>' + fmtC(tr.t) + '</td><td>' + fmtDate(rel.t0ms + tr.t * DAY) + '</td>' +
+          '<td>' + status + '</td>' +
           '<td class="num">' + fmtC(tr.med) + ' [' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</td>' +
           '<td class="num">' + fmtPct(tr.pTarget) + (tr.pCI && isFinite(tr.pCI[0]) ? ' (' + Math.round(tr.pCI[0] * 100) + '–' + Math.round(tr.pCI[1] * 100) + '%)' : '') + '</td></tr>';
       });
       h += '</tbody></table>';
+      if (fit.troughs.some(function (tr) { return tr.assumed; })) {
+        h += '<div class="rp-legend">“Assumed next dose” is not a scheduled administration: no dose was entered at that time, so the app projected one interval (q' +
+          fmtDays(fit.interval) + ' d) after the last entered dose.</div>';
+      }
     }
 
     // 5 — findings & advice
@@ -4197,7 +5064,15 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
       '</tr></table>';
 
     // 7 — research-use disclaimer (full text also in the About dialog)
-    h += '<p class="rp-note">For research purposes only — not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
+    /* Model scope must travel WITH the report: whoever receives the printed
+     * page never opens the About dialog. The exclusion sentence used to appear
+     * in About only, and the assumptions nowhere in the report at all. */
+    if (spec.assumptions && spec.assumptions.length) {
+      h += '<h3 class="rp-h">Model assumptions and scope</h3><ul class="rp-findings">';
+      spec.assumptions.forEach(function (a) { h += '<li>' + esc(a) + '</li>'; });
+      h += '</ul>';
+    }
+    h += '<p class="rp-note">For research purposes only — not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
 
     return h;
   }
@@ -4224,7 +5099,7 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
   ECU.precisionWord = precisionWord;
   ECU.updateRunReady = updateRunReady;
   /* Testability: shrinkage visual (v0.9.2). */
-  ECU.shrinkBars = shrinkBars;
+  ECU.infoBars = infoBars;
   /* Testability: centralised version (v0.12.0). */
   ECU.appVersion = VERSION;
   ECU.updateTargetFold = updateTargetFold;
