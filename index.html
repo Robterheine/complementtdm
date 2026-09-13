@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 05:55 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 20:14 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -808,7 +808,7 @@ table.data tr.assumed td { background: #fffbeb; }
       <summary>How to read these results</summary>
       <ul>
         <li><b>Band (5–95%):</b> 90% plausible range for the true concentration.</li>
-        <li><b>P(trough &gt; target):</b> chance the true trough stays above your target — below 90% on upcoming doses suggests considering a change.</li>
+        <li><b>P(trough &gt; target):</b> chance the true trough stays above your target, at your chosen dates.</li>
         <li><b>Median trough [5–95%]:</b> the same distribution in µg/mL.</li>
       </ul>
     </details>
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.22.0';
+  ECU.VERSION = '0.23.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3753,14 +3753,21 @@ table.data tr.assumed td { background: #fffbeb; }
     return out ? '<div class="shrink-bars" title="How much of each individual parameter shift the measurements actually determined: longer bar = better informed by your samples.">' + out +
       '<div class="shrink-key">Bar length = share informed by your samples · <span class="sk-ok">green ≥ 50%</span> · <span class="sk-warn">amber 30–49%</span> · <span class="sk-weak">grey &lt; 30% (population prior)</span></div></div>' : '';
   }
+  /* F3/F11 (independent audit, 2026-09-13): colour is an attainment report
+   * against the user's own chosen target, not a decision rule — this app
+   * never suggests a dose or interval change (README golden rule). The old
+   * "≥ 90%" text also hid the actual number once above threshold, and the
+   * warn/bad titles told the reader to change the regimen. All three badges
+   * now always show the real percent; none of them recommend anything. */
   function ptaBadge(p, ci) {
     if (!isFinite(p)) return '<span class="badge info" title="Probability not available">–</span>';
     var ciTxt = (ci && isFinite(ci[0]) && isFinite(ci[1]))
       ? ' (Monte-Carlo 95% interval ' + Math.round(ci[0] * 100) + '–' + Math.round(ci[1] * 100) + '%)'
       : '';
-    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ≥ 90% — the trough target is likely to be maintained' + ciTxt + '">P ≥ 90%</span>';
-    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + Math.round(p * 100) + '% — intermediate; a dose or interval change may be needed' + ciTxt + '">P ' + Math.round(p * 100) + '%</span>';
-    return '<span class="badge bad" data-help="pta" title="Probability ' + Math.round(p * 100) + '% — the target is likely not attained; consider adjusting the dose or interval' + ciTxt + '">P ' + Math.round(p * 100) + '%</span>';
+    var pct = Math.round(p * 100);
+    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ' + pct + '% — the trough target is likely to be maintained' + ciTxt + '">P ' + pct + '%</span>';
+    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + pct + '% — intermediate attainment against your chosen target' + ciTxt + '">P ' + pct + '%</span>';
+    return '<span class="badge bad" data-help="pta" title="Probability ' + pct + '% — the target is unlikely to be attained' + ciTxt + '">P ' + pct + '%</span>';
   }
   /* Dosing intervals are whole days in practice; fmtC would render 14 as
    * "14.0", which reads like a measured quantity rather than a schedule. */
@@ -4593,7 +4600,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var ad = [];
     var upcoming = fit.troughs.filter(function (tr) { return tr.t > rel.nowRel - 0.02; });
     if (upcoming.some(function (tr) { return tr.pTarget < 0.9; })) {
-      ad.push(noteHtml('Target unlikely to be reached at one or more upcoming doses — consider a dose or interval change.', 'warn'));
+      ad.push(noteHtml('The target is not predicted to be reached with ≥ 90% probability at one or more upcoming doses.', 'warn'));
     }
     if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
       ad.push(noteHtml(fit.disease + ': clearance varies between occasions — predictions are more uncertain; re-sample around flares or regimen changes.', 'warn'));
@@ -5617,12 +5624,24 @@ table.data tr.assumed td { background: #fffbeb; }
       out.push('Individual clearance ' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) +
         '], central volume ' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + '].');
     }
-    var upcoming = fit.troughs.filter(function (tr) { return tr.t > rel.nowRel - 0.02; });
+    /* F2 (independent audit, 2026-09-13): `worst` (lowest pTarget) used to be
+     * printed as "the next dose" — a later, worse trough was written into the
+     * record as though it were the imminent one. `next` (smallest t) and
+     * `worst` are now reported separately, and the worst-trough sentence is
+     * only emitted when it names a DIFFERENT dose than `next` — otherwise the
+     * two sentences would just repeat the same row. */
+    var upcoming = fit.troughs.filter(function (tr) { return tr.t > rel.nowRel - 0.02; })
+      .sort(function (a, b) { return a.t - b.t; });
     if (upcoming.length) {
+      var next = upcoming[0];
+      out.push('Predicted trough before the next dose (' + fmtDate(rel.t0ms + next.t * DAY) + '): median ' +
+        fmtC(next.med) + ' µg/mL [5–95% ' + fmtC(next.p5) + '–' + fmtC(next.p95) + '], P(trough > ' +
+        st.target.value + ' µg/mL) = ' + fmtPct(next.pTarget) + '.');
       var worst = upcoming.reduce(function (a, b) { return b.pTarget < a.pTarget ? b : a; });
-      out.push('Predicted trough before the next dose (' + fmtDate(rel.t0ms + worst.t * DAY) + '): median ' +
-        fmtC(worst.med) + ' µg/mL [5–95% ' + fmtC(worst.p5) + '–' + fmtC(worst.p95) + '], P(trough > ' +
-        st.target.value + ' µg/mL) = ' + fmtPct(worst.pTarget) + '.');
+      if (worst.t !== next.t) {
+        out.push('The lowest predicted attainment among upcoming doses is on ' + fmtDate(rel.t0ms + worst.t * DAY) +
+          ': median ' + fmtC(worst.med) + ' µg/mL, P(trough > ' + st.target.value + ' µg/mL) = ' + fmtPct(worst.pTarget) + '.');
+      }
       if (upcoming.some(function (tr) { return tr.pTarget < 0.9; })) {
         out.push('The trough target is not predicted to be reached with ≥ 90% probability at one or more upcoming doses.');
       }
@@ -5857,6 +5876,7 @@ table.data tr.assumed td { background: #fffbeb; }
    * the UI itself. */
   ECU.reportHtml = reportHtml;
   ECU.findingsLines = findingsLines;
+  ECU.ptaBadge = ptaBadge;   // testability (F3/F11, v0.23.0): pure string builder, no DOM
   /* Testability: novice-help internals (v0.8.0). */
   ECU.HELP = HELP;
   ECU.helpTextFor = helpTextFor;
