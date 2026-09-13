@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-12 21:28 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 05:55 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.21.0';
+  ECU.VERSION = '0.22.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -4366,15 +4366,22 @@ table.data tr.assumed td { background: #fffbeb; }
       return { x: o.t, y: o.c, color: '#dc2626', label: 'obs' };
     });
 
+    /* The axis is sized to what is actually DRAWN. Once an individual fit
+     * exists the population band is no longer plotted (see below), so it must
+     * not influence the y-range either — otherwise a wide, invisible
+     * population band could still stretch the axis and visually flatten the
+     * individual band it was supposed to have been replaced by. */
     var yMax = 60;
     function consider(v) { if (isFinite(v) && v > yMax) yMax = v; }
-    p95.forEach(consider); pm95.forEach(consider);
+    p95.forEach(consider);
+    if (!fit.hasObs) pm95.forEach(consider);
     obsPts.forEach(function (p) { consider(p.y); });
     consider(state.target.value);
     // lower edge of the data, needed only for the optional log axis
     var yLoData = Infinity;
     function considerLo(v) { if (isFinite(v) && v > 0 && v < yLoData) yLoData = v; }
-    p5.forEach(considerLo); pm5.forEach(considerLo);
+    p5.forEach(considerLo);
+    if (!fit.hasObs) pm5.forEach(considerLo);
     obsPts.forEach(function (p) { considerLo(p.y); });
     considerLo(state.target.value);
     yMax = Math.min(yMax * 1.18, chartYMaxCap);
@@ -4397,14 +4404,15 @@ table.data tr.assumed td { background: #fffbeb; }
     var rows = [];
 
     if (fit.hasObs) {
-      /* Population band pushed FIRST so it paints underneath (SVG paints in
-       * DOM/array order) — the narrower, individually-informed band then sits
-       * clearly on top instead of being muted by the wider band painted over
-       * it. ("Individual"/"Population", not "Posterior"/"Prior": a clinician
-       * reading this chart while dosing a patient should not need to know
-       * what a posterior distribution is.) */
-      bands.push({ x: grid, lo: pm5, hi: pm95, fill: 'rgba(100,116,139,.10)' });
-      legend.push({ label: 'Population prediction 5–95%', color: 'rgba(100,116,139,.45)', swatch: 'band' });
+      /* Once an individual fit exists, the population band is deliberately
+       * NOT drawn — showing it alongside a narrower, patient-informed band
+       * invited exactly the misreading a clinician must not make: that the
+       * wider population range is somehow still the relevant uncertainty for
+       * THIS patient. A fit that used this patient's own measurements
+       * supersedes the population prior; only the individual band is shown.
+       * ("Individual prediction", not "Posterior": a clinician reading this
+       * chart while dosing a patient should not need to know what a
+       * posterior distribution is.) */
       bands.push({ x: grid, lo: p5, hi: p95, fill: 'rgba(14,116,144,.16)' });
       series.push({ x: grid, y: med, color: '#0e7490', width: 2.2, label: 'Individual prediction (median)' });
       rows.push({ label: 'Individual prediction (median)', color: '#0e7490', values: med });
