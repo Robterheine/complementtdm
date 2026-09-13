@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:29 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:59 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -625,7 +625,7 @@ table.data tr.assumed td { background: #fffbeb; }
        inside main.layout for the same width-matching reason as the
        restore bar above. -->
   <div class="stepper no-print" id="stepper">
-    <span class="step" data-step="wt"><i>1</i> Enter weight</span>
+    <span class="step" data-step="wt"><i>1</i> Drug &amp; weight</span>
     <span class="step" data-step="dose"><i>2</i> Add doses &amp; samples</span>
     <span class="step" data-step="run"><i>3</i> Run forecast</span>
     <span class="step" data-step="explore"><i>4</i> Explore regimen (optional)</span>
@@ -807,7 +807,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <details class="help no-print" id="howto">
       <summary>How to read these results</summary>
       <ul>
-        <li><b>Band (5–95%):</b> 90% plausible range for the true concentration.</li>
+        <li><b>Band (5–95%):</b> 90% plausible range for the true concentration — it does not include assay error, so a future measured value may fall outside it.</li>
         <li><b>P(trough &gt; target):</b> chance the true trough stays above your target, at your chosen dates.</li>
         <li><b>Median trough [5–95%]:</b> the same distribution in µg/mL.</li>
       </ul>
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.27.0';
+  ECU.VERSION = '0.28.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1009,7 +1009,7 @@ table.data tr.assumed td { background: #fffbeb; }
         'Clearance is parallel linear + Michaelis–Menten (target-mediated). The nonlinear term dominates at low concentrations, so exposure is not proportional to dose.',
         'In aHUS, between-occasion clearance variability (IOV, variance 0.112) is folded into the clearance prior: multi-occasion samples are treated as one exchangeable block, because the IIV/IOV split is not identifiable from the sparse data of a single patient. Occasion-level random effects are not estimated separately.',
         'Because the occasion component stays folded in after fitting, the interval reported for an upcoming dose is somewhat narrower than the full occasion-to-occasion predictive uncertainty in aHUS.',
-        'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier under Advanced options.'
+        'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier in "Assay settings", below the measurements.'
       ]
     },
 
@@ -2557,10 +2557,26 @@ table.data tr.assumed td { background: #fffbeb; }
     // it the M3 likelihood is undefined. Fail loudly rather than silently treating
     // the sample as a concentration of 0.
     if (obsFit.some(function (o) { return o.lloq && !(input.lloq > 0); })) {
-      throw new Error('A measurement is flagged below LLOQ but no LLOQ value is set — enter the assay LLOQ in the patient card.');
+      throw new Error('A measurement is flagged below LLOQ but no LLOQ value is set — enter the assay LLOQ under Assay settings.');
     }
 
     if (!doses.length) throw new Error('At least one dose is required to run a forecast.');
+    /* F21 (independent audit, 2026-09-13): the engine's time unit is DAYS
+     * everywhere. A caller that accidentally passes epoch-milliseconds (a
+     * plausible mistake for any future/headless caller building `doses`/`obs`
+     * straight from Date.now()-style values, since the UI itself converts
+     * ms -> days in relContext() before doses/obs ever reach runFit) would not
+     * fail loudly — buildGrid()'s day-stepped loop would just iterate roughly
+     * 10^8 times trying to cover a multi-million-day horizon, silently hanging
+     * rather than erroring. 1e5 days is ~274 years — far beyond any real
+     * relative time this app ever produces, and far below any real epoch-ms
+     * value (Date.now() is on the order of 10^12) — so this cannot reject a
+     * legitimate case while catching the mistake immediately, before any
+     * simulation work starts. */
+    var allTimes = doses.map(function (d) { return d.t; }).concat(obs.map(function (o) { return o.t; }));
+    if (allTimes.some(function (tv) { return Math.abs(tv) > 1e5; })) {
+      throw new Error('A dose or measurement time looks like milliseconds, not days — this engine’s time unit is days throughout. Convert to days before calling runFit.');
+    }
     // Body weight is a covariate of every model — without it the allometric
     // scaling would silently evaluate to zero clearance. Fail loudly instead.
     // F8 (independent audit, 2026-09-13): widened from 35-200 kg -- the old
@@ -3822,9 +3838,17 @@ table.data tr.assumed td { background: #fffbeb; }
   function saveSession() {
     if (!lsOk) return;
     try {
+      /* F12 (independent audit, 2026-09-13): patient.code (a name or MRN-like
+       * identifier the clinician may type) is never persisted to localStorage
+       * — on a shared ward PC, that would leave an identifiable patient name
+       * sitting in browser storage indefinitely. Everything else needed to
+       * pick the session back up (doses, measurements, target, drug) has no
+       * identifying value on its own and is unaffected. The JSON export
+       * still carries the code, by design — it is the deliberate, portable,
+       * user-initiated path, not something written silently in the background. */
       localStorage.setItem(LS_KEY, JSON.stringify({
         v: ECU.VERSION, savedAt: Date.now(),
-        patient: state.patient, drug: state.drug, target: state.target,
+        patient: Object.assign({}, state.patient, { code: '' }), drug: state.drug, target: state.target,
         lloq: state.lloq, errMult: state.errMult, recency: state.recency,
         doses: state.doses, obs: state.obs, report: state.report
       }));
@@ -4764,6 +4788,12 @@ table.data tr.assumed td { background: #fffbeb; }
       });
       thr += '</tbody></table></div>';
       thr += '<div class="legend-note">Trough just before each dose · median [5–95%] is a <b>credible interval for the true concentration</b> (it does not include assay error, so a future measured value may fall outside it) · P = chance the true trough exceeds ' + state.target.value + ' µg/mL (hover a badge for details).</div>';
+      // F9 (independent audit, 2026-09-13): the interval-narrowness caveat
+      // now lives here too, not just in the findings paragraph — this is the
+      // table a consultant actually reads before advising on the next dose.
+      if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
+        thr += '<div class="legend-note">' + esc(fit.disease) + ': between-occasion variability is folded into the prior, so the interval above for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty.</div>';
+      }
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
         thr += '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
           ' d) after the last entered dose — enter the actual planned doses, or use Steady state mode, to model a different interval.</div>';
@@ -5848,7 +5878,15 @@ table.data tr.assumed td { background: #fffbeb; }
       out.push('Parameter uncertainty was taken from the population prior (fit curvature was not usable) — interpret the prediction bands with extra caution.');
     }
     if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
-      out.push(fit.disease + ': between-occasion variability in clearance is folded into the prior — individual predictions are more uncertain than for PNH.');
+      // F9 (independent audit, 2026-09-13): the old sentence said predictions
+      // are more uncertain than PNH, which is true but does not name the
+      // separate, more specific caveat the audit wanted surfaced: because the
+      // occasion component is folded into the prior rather than modelled as a
+      // future-occasion effect, the interval reported for the NEXT dose is
+      // somewhat narrower than the full occasion-to-occasion uncertainty.
+      // Both claims are simultaneously true and belong in one sentence, not
+      // two competing ones (see INDEPENDENT_AUDIT.md's own reviewer note).
+      out.push(fit.disease + ': between-occasion variability in clearance is folded into the prior — individual predictions are more uncertain than for PNH, and the interval for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty because the occasion effect is not modelled separately.');
     }
     return out;
   }
@@ -6007,6 +6045,11 @@ table.data tr.assumed td { background: #fffbeb; }
           '<td class="num">' + fmtPct(tr.pTarget) + (tr.pCI && isFinite(tr.pCI[0]) ? ' (' + Math.round(tr.pCI[0] * 100) + '–' + Math.round(tr.pCI[1] * 100) + '%)' : '') + '</td></tr>';
       });
       h += '</tbody></table>';
+      // F9 (independent audit, 2026-09-13): same caveat as the on-screen
+      // table, printed here too — the record must carry it, not just the screen.
+      if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
+        h += '<div class="rp-legend">' + esc(fit.disease) + ': between-occasion variability is folded into the prior, so the interval above for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty.</div>';
+      }
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
         h += '<div class="rp-legend">“Assumed next dose” is not a scheduled administration: no dose was entered at that time, so the app projected one interval (q' +
           fmtDays(fit.interval) + ' d) after the last entered dose.</div>';
