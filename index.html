@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:04 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:29 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.26.0';
+  ECU.VERSION = '0.27.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2600,7 +2600,39 @@ table.data tr.assumed td { background: #fffbeb; }
     var windowStart = input.windowStart != null
       ? input.windowStart
       : Math.max(0, lastDose - 365);
-    var grid = buildGrid(doses, horizon, interval, windowStart, M.drug().INFUSION_D);
+    /* Chart-only continuation doses (v0.15.0), computed here — BEFORE the
+     * grid — rather than down in the chart-continuation block below, where
+     * they used to be computed. Reason (found 2026-09-14, driving the real
+     * app): buildGrid() adds fine per-dose time points (near each dose's
+     * peak and pre-dose instant) only for the doses it is GIVEN. When the
+     * grid was built from `doses` alone and the chart simulation was then
+     * run over `doses.concat(chartProjectedDoses)`, every projected dose's
+     * peak/trough fell in a region with only the coarse half-day background
+     * grid — no fine points at all — so the RENDERED curve for those cycles
+     * silently flattened into a shorter, duller hump than the real ones on
+     * either side of it, even though the underlying simulation itself was
+     * perfectly periodic (confirmed: the pre-dose trough at every REAL dose
+     * stayed numerically constant; only the visual sampling of the
+     * projected ones was sparse). `buildGrid` only reads doses to add time
+     * points around them — it has no other effect — so folding
+     * `chartProjectedDoses` in here is safe: it cannot change `ctx.doses`,
+     * `troughs`, or anything the fit itself depends on, all of which
+     * continue to use the real `doses` array exactly as before, elsewhere
+     * in this function. See `loadingPhase`'s own comment below for why the
+     * continuation can be empty (crovalimab, still in its loading phase). */
+    var contSpec = M.drug();
+    var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount || 0);
+    var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
+    var contAmt = doses[doses.length - 1].amt;
+    var chartProjectedDoses = [];
+    if (!loadingPhase) {
+      for (var pc = 1; pc <= 30; pc++) {
+        var pt = lastDose + pc * interval;
+        if (pt >= horizon) break;
+        chartProjectedDoses.push({ t: pt, amt: contAmt, route: contRoute });
+      }
+    }
+    var grid = buildGrid(doses.concat(chartProjectedDoses), horizon, interval, windowStart, M.drug().INFUSION_D);
 
     // ---- prior predictive ----
     prog(0.02, 'Prior predictive simulation…');
@@ -2713,27 +2745,13 @@ table.data tr.assumed td { background: #fffbeb; }
      *     dose's administration time, so it is causally identical whichever
      *     doses array reaches it (PK cannot see a dose before it is given) —
      *     it must keep using the real `doses` so nothing here can silently
-     *     shift the "assumed dose" trough that the table already reports. */
-    var chartBand = band, chartPriorBand = priorBand, chartProjectedDoses = [];
-    var contSpec = M.drug();
-    /* F7 (independent audit, 2026-09-13): while the entered doses are still
-     * entirely within a drug's declared loading phase (see loadingDoseCount
-     * on the crovalimab spec), `interval` reflects the LOADING spacing, not
-     * the eventual maintenance one -- projecting it forward would draw a
-     * chart that never transitions to maintenance, and its own dose amount
-     * (`contAmt`, the last entered amount) would still be the loading dose
-     * too. Suppress the continuation entirely until a real maintenance dose
-     * has been entered; `loadingPhase` is exported so the UI can say why. */
-    var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount || 0);
-    var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
-    var contAmt = doses[doses.length - 1].amt;
-    if (!loadingPhase) {
-      for (var pc = 1; pc <= 30; pc++) {
-        var pt = lastDose + pc * interval;
-        if (pt >= horizon) break;
-        chartProjectedDoses.push({ t: pt, amt: contAmt, route: contRoute });
-      }
-    }
+     *     shift the "assumed dose" trough that the table already reports.
+     *
+     * `chartProjectedDoses` itself (and `loadingPhase`) is computed earlier
+     * now, before `grid` — see that comment for why (grid resolution around
+     * the projected doses, not a fit-affecting change) — this block only
+     * runs the simulation over it. */
+    var chartBand = band, chartPriorBand = priorBand;
     if (chartProjectedDoses.length) {
       var chartDoses = doses.concat(chartProjectedDoses);
       // Display-only curve, not a decision number: subsampled draws keep this
