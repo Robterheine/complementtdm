@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 20:14 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 20:51 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.23.0';
+  ECU.VERSION = '0.24.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1106,6 +1106,16 @@ table.data tr.assumed td { background: #fffbeb; }
       KA_D: 0.126,                         // SC absorption rate at the reference age [1/day]
       BIOAVAIL_SC: 0.83,                   // F1
       adminRoutes: { first: 'iv', subsequent: 'sc' },  // IV loading, then SC
+      /* F7 (independent audit, 2026-09-13): the EMA loading regimen is 5 doses
+       * (1 IV + 4 weekly SC) before q28d maintenance begins. Until a 6th dose
+       * is entered, every spacing on file is a LOADING spacing (q7d/q6d),
+       * never a maintenance one -- modalInterval()'s "later half of doses"
+       * heuristic has nothing else to look at and returns q7d, which runFit
+       * would otherwise auto-project forever on the chart. loadingDoseCount
+       * gates that projection off until a real maintenance-interval dose has
+       * actually been entered. 0/undefined for the other drugs, which have no
+       * loading phase, so this is a no-op there. */
+      loadingDoseCount: 5,
       covariateAge: true,                  // UI asks for age
       samplePeak: 'SC peak ≈ one week or more after administration (absorption-limited); the IV loading dose peaks at the end of its infusion',
       /* EMA PiaSky posology: 1000 mg IV loading (day 1); 340 mg SC on days 2, 8,
@@ -2602,12 +2612,23 @@ table.data tr.assumed td { background: #fffbeb; }
      *     shift the "assumed dose" trough that the table already reports. */
     var chartBand = band, chartPriorBand = priorBand, chartProjectedDoses = [];
     var contSpec = M.drug();
+    /* F7 (independent audit, 2026-09-13): while the entered doses are still
+     * entirely within a drug's declared loading phase (see loadingDoseCount
+     * on the crovalimab spec), `interval` reflects the LOADING spacing, not
+     * the eventual maintenance one -- projecting it forward would draw a
+     * chart that never transitions to maintenance, and its own dose amount
+     * (`contAmt`, the last entered amount) would still be the loading dose
+     * too. Suppress the continuation entirely until a real maintenance dose
+     * has been entered; `loadingPhase` is exported so the UI can say why. */
+    var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount || 0);
     var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
     var contAmt = doses[doses.length - 1].amt;
-    for (var pc = 1; pc <= 30; pc++) {
-      var pt = lastDose + pc * interval;
-      if (pt >= horizon) break;
-      chartProjectedDoses.push({ t: pt, amt: contAmt, route: contRoute });
+    if (!loadingPhase) {
+      for (var pc = 1; pc <= 30; pc++) {
+        var pt = lastDose + pc * interval;
+        if (pt >= horizon) break;
+        chartProjectedDoses.push({ t: pt, amt: contAmt, route: contRoute });
+      }
     }
     if (chartProjectedDoses.length) {
       var chartDoses = doses.concat(chartProjectedDoses);
@@ -2744,6 +2765,7 @@ table.data tr.assumed td { background: #fffbeb; }
       chartPriorBand: chartPriorBand,
       chartBand: chartBand,
       chartProjectedDoses: chartProjectedDoses,
+      loadingPhase: loadingPhase,
       troughs: troughStats,
       clQ: { p5: quantileSorted(clArr, 0.05), med: quantileSorted(clArr, 0.5), p95: quantileSorted(clArr, 0.95) },
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
@@ -2816,13 +2838,22 @@ table.data tr.assumed td { background: #fffbeb; }
         med: quantileSortedOfColumn(mat, 0, 0.5),
         p5: quantileSortedOfColumn(mat, 0, 0.05),
         p95: quantileSortedOfColumn(mat, 0, 0.95),
-        pTarget: probAbove(mat, 0, target)
+        pTarget: probAbove(mat, 0, target),
+        // F5/F16 (independent audit, 2026-09-13): the explorer's P had no
+        // uncertainty band at all, unlike the trough table's matching
+        // batchMeansCI (subsample() keeps chain order, so this is the same
+        // batch-means method on a shorter chain -- the CI honestly widens
+        // versus the full-chain trough table, rather than pretending the
+        // subsampled P is exact. null (fewer than 12 batches) is handled by
+        // ptaBadge already, same as the trough table's own pCI.
+        pCI: batchMeansCI(mat, 0, target)
       },
       ss: {
         med: quantileSortedOfColumn(mat, 1, 0.5),
         p5: quantileSortedOfColumn(mat, 1, 0.05),
         p95: quantileSortedOfColumn(mat, 1, 0.95),
-        pTarget: probAbove(mat, 1, target)
+        pTarget: probAbove(mat, 1, target),
+        pCI: batchMeansCI(mat, 1, target)
       }
     };
   }
@@ -4605,6 +4636,16 @@ table.data tr.assumed td { background: #fffbeb; }
     if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
       ad.push(noteHtml(fit.disease + ': clearance varies between occasions — predictions are more uncertain; re-sample around flares or regimen changes.', 'warn'));
     }
+    /* F7 (independent audit, 2026-09-13): the chart's projected-dose
+     * continuation is already suppressed by the engine during a loading
+     * phase (see fit.loadingPhase in runFit); this says why, since a
+     * silently absent projection is easy to misread as "the app forgot,"
+     * not "the app knows this interval isn't the maintenance one yet." */
+    if (fit.loadingPhase) {
+      ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished — the forecast is not projected past the last entered dose, ' +
+        'because the interval used so far is the loading schedule’s, not the eventual maintenance interval. Enter the planned maintenance ' +
+        'doses as they are given, or switch to Steady state mode once maintenance begins.', 'warn'));
+    }
     if (state.lloq > 0) {
       ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
     }
@@ -5343,9 +5384,9 @@ table.data tr.assumed td { background: #fffbeb; }
       h += '<tr class="' + (isBase ? 'iv-current' : '') + '">' +
         '<td data-label="' + rowLabel + '">' + label + (isBase ? ' <span class="tag-current">entered value</span>' : '') + '</td>' +
         '<td class="num" data-label="Next trough">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
-        '<td class="num" data-label="P(next &gt; target)">' + ptaBadge(r.next.pTarget) + '</td>' +
+        '<td class="num" data-label="P(next &gt; target)">' + ptaBadge(r.next.pTarget, r.next.pCI) + '</td>' +
         '<td class="num" data-label="Steady-state trough">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
-        '<td class="num" data-label="P(steady-state &gt; target)">' + ptaBadge(r.ss.pTarget) + '</td>' +
+        '<td class="num" data-label="P(steady-state &gt; target)">' + ptaBadge(r.ss.pTarget, r.ss.pCI) + '</td>' +
         '</tr>';
     });
     h += '</tbody></table>';
