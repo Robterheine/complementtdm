@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 21:26 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:04 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -649,7 +649,7 @@ table.data tr.assumed td { background: #fffbeb; }
           <label class="f" for="pt-wt">Weight (kg)</label>
           <button type="button" class="info" data-help="wt" aria-label="What is the weight field for?" aria-expanded="false" title="Body weight in kg — covariate on clearance and volumes">ⓘ</button>
         </div>
-        <input type="number" id="pt-wt" min="35" max="200" step="0.5" placeholder="e.g. 70" title="Body weight in kg — covariate on clearance and volumes">
+        <input type="number" id="pt-wt" min="25" max="300" step="0.5" placeholder="e.g. 70" title="Body weight in kg — covariate on clearance and volumes">
       </div>
       <div class="sess-field" id="ageRow" style="display:none">
         <div class="lbl-help">
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.25.0';
+  ECU.VERSION = '0.26.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1048,7 +1048,11 @@ table.data tr.assumed td { background: #fffbeb; }
       targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/33512711/',
       assumptions: [
         'Simplified research re-implementation of the FDA-review population PK model (linear elimination, no IOV, weight as the only covariate); requires its own prospective validation.',
-        'Implements the ADA-negative population only.'
+        'Implements the ADA-negative population only.',
+        // F8 (independent audit, 2026-09-13): displayed as fact, not a warning
+        // -- author's own clinical judgement, no age gate needed since the
+        // model has no age covariate at all to gate.
+        'Developed and evaluated in an adult population.'
       ]
     },
 
@@ -1117,6 +1121,17 @@ table.data tr.assumed td { background: #fffbeb; }
        * loading phase, so this is a no-op there. */
       loadingDoseCount: 5,
       covariateAge: true,                  // UI asks for age
+      /* F8 (independent audit, 2026-09-13): author's own clinical judgement
+       * about acceptable extrapolation for the age covariate -- not derived
+       * from a paediatric validation study (none exists; README states this
+       * app does not cover paediatrics). Below pediatricBlockAge the model is
+       * refused outright; from pediatricBlockAge up to (not including)
+       * pediatricWarnAge it runs but is flagged, since the model was not
+       * developed for children; at or above pediatricWarnAge, silent (adult
+       * dosing/PK applies). Eculizumab and ravulizumab have no age covariate
+       * at all, so this gate does not apply to them. */
+      pediatricBlockAge: 12,
+      pediatricWarnAge: 17,
       samplePeak: 'SC peak ≈ one week or more after administration (absorption-limited); the IV loading dose peaks at the end of its infusion',
       /* EMA PiaSky posology: 1000 mg IV loading (day 1); 340 mg SC on days 2, 8,
        * 15 and 22; then maintenance every 4 weeks — 680 mg (≥40 to <100 kg) or
@@ -1136,7 +1151,8 @@ table.data tr.assumed td { background: #fffbeb; }
         'The residual-error additive term (SD 1.01 mg/L) is the rich-sampling estimate; sparse TDM samples are therefore weighted relatively strongly.',
         'The IV loading-dose infusion duration (1 h) is an operational assumption — the control stream does not fix D1.',
         'All six population PK random effects (CL, central volume, Q, peripheral volume, SC absorption rate, bioavailability) are estimated from your samples (MAP-Bayes). With sparse SC-only sampling, absorption and clearance can partly trade off; the estimate stays anchored to the population prior.',
-        'The IIV on the additive residual error is not estimated (not a PK parameter).'
+        'The IIV on the additive residual error is not estimated (not a PK parameter).',
+        'Age under 12 years: not accepted (no basis to extrapolate the absorption-rate covariate that far). Age 12–16: accepted, flagged — the model was not developed for children. Age 17 and over: no flag.'
       ],
       yMaxCap: 12000                       // chart y-axis cap: q2w SC dosing reaches high steady-state levels
     }
@@ -2547,9 +2563,27 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!doses.length) throw new Error('At least one dose is required to run a forecast.');
     // Body weight is a covariate of every model — without it the allometric
     // scaling would silently evaluate to zero clearance. Fail loudly instead.
-    if (!(input.wt >= 35 && input.wt <= 200)) {
-      throw new Error('Body weight is required (35–200 kg) — it is a covariate of the model.');
+    // F8 (independent audit, 2026-09-13): widened from 35-200 kg -- the old
+    // hard cap refused a real, plausible obese PNH/aHUS patient outright
+    // rather than flagging the extrapolation. 25-300 kg is the author's own
+    // judgement of the adult range worth covering; no per-drug distinction
+    // is drawn (weight is a covariate for all three via allometric scaling).
+    if (!(input.wt >= 25 && input.wt <= 300)) {
+      throw new Error('Body weight is required (25–300 kg) — it is a covariate of the model.');
     }
+    /* F8 (independent audit, 2026-09-13): engine-level backstop, mirroring the
+     * weight check above -- the UI already refuses to run below this age, but
+     * a direct call (JSON import, a test, a future headless caller) must not
+     * silently extrapolate the absorption-rate covariate into a range with no
+     * data at all. pediatricWarnAge (12-16 inclusive here) is a WARNING, not a
+     * throw -- exported as pediatricWarn below for the UI to disclose. Only
+     * crovalimab declares these fields; this is a no-op for the other two. */
+    if (M.drug().pediatricBlockAge && age != null && age < M.drug().pediatricBlockAge) {
+      throw new Error(M.drug().label + ' requires an age of at least ' + M.drug().pediatricBlockAge +
+        ' years — the model was not developed for younger children.');
+    }
+    var pediatricWarn = !!(M.drug().pediatricWarnAge && age != null &&
+      age >= (M.drug().pediatricBlockAge || 0) && age < M.drug().pediatricWarnAge);
     var target = input.target != null ? input.target : null;
     if (target != null && !isFinite(target)) {
       throw new Error('The trough target must be a number — correct or clear the field.');
@@ -2837,6 +2871,7 @@ table.data tr.assumed td { background: #fffbeb; }
       chartBand: chartBand,
       chartProjectedDoses: chartProjectedDoses,
       loadingPhase: loadingPhase,
+      pediatricWarn: pediatricWarn,
       troughs: troughStats,
       clQ: { p5: quantileSorted(clArr, 0.05), med: quantileSorted(clArr, 0.5), p95: quantileSorted(clArr, 0.95) },
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
@@ -3975,8 +4010,13 @@ table.data tr.assumed td { background: #fffbeb; }
     var btn = $('btnRun'), hint = $('runHint');
     if (!btn) return;
     readPatient();
-    var wtOk = state.patient.wt >= 35 && state.patient.wt <= 200;
-    var ageOk = !M.drug().covariateAge || (state.patient.age >= 1 && state.patient.age <= 100);
+    var wtOk = state.patient.wt >= 25 && state.patient.wt <= 300;  // F8: widened from 35-200
+    // F8: only crovalimab declares pediatricBlockAge -- the button stays
+    // blocked below it (a hard refusal, same as an out-of-range weight),
+    // but 12-16 is allowed through with a flagged, non-blocking advisory
+    // (see runFit's pediatricWarn) rather than being disabled here too.
+    var ageOk = !M.drug().covariateAge ||
+      (state.patient.age >= (M.drug().pediatricBlockAge || 1) && state.patient.age <= 100);
     var doseOk = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var reasons = [];
     if (!wtOk) reasons.push('the patient\u2019s weight');
@@ -4014,7 +4054,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (typeof document === 'undefined') return;
     var el = $('stepper');
     if (!el || el.classList.contains('hidden')) return;
-    var wtDone = state.patient.wt >= 35 && state.patient.wt <= 200;
+    var wtDone = state.patient.wt >= 25 && state.patient.wt <= 300;  // F8: widened from 35-200
     var doseDone = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var runDone = !!state.fit && !state.stale;
     var exploreDone = !!(state.fit && state.fit.intervalScan);
@@ -4111,7 +4151,9 @@ table.data tr.assumed td { background: #fffbeb; }
     // lives in the About dialog — the main screen stays light).
     var HINTS = {
       eculizumab: 'IV infusion over 30 min.',
-      ravulizumab: 'IV infusion over 2.5 h.',
+      // F8 (independent audit, 2026-09-13): displayed as fact, not a
+      // warning — the model has no age covariate to gate on at all.
+      ravulizumab: 'IV infusion over 2.5 h. Developed for adults.',
       crovalimab: 'First dose IV (loading), then SC.'
     };
     var hintEl = $('drugHint');
@@ -4377,9 +4419,15 @@ table.data tr.assumed td { background: #fffbeb; }
       return;
     }
     var wt = state.patient.wt;
-    if (!(wt >= 35 && wt <= 200)) { alert('Enter the patient\'s body weight (35–200 kg) — it is a covariate of the model.'); return; }
-    if (M.drug().covariateAge && !(state.patient.age >= 1 && state.patient.age <= 100)) {
-      alert('Age is a covariate of the ' + M.drug().label + ' model — enter an age between 1 and 100 years.');
+    if (!(wt >= 25 && wt <= 300)) { alert('Enter the patient\'s body weight (25–300 kg) — it is a covariate of the model.'); return; }
+    // F8 (independent audit, 2026-09-13): crovalimab-only. Below
+    // pediatricBlockAge the model has no basis to extrapolate the
+    // absorption-rate covariate and is refused outright, same as an
+    // out-of-range weight; 12-16 is allowed through (flagged separately by
+    // runFit's pediatricWarn, rendered as a non-blocking advisory).
+    var minAge = M.drug().pediatricBlockAge || 1;
+    if (M.drug().covariateAge && !(state.patient.age >= minAge && state.patient.age <= 100)) {
+      alert(M.drug().label + ' requires an age between ' + minAge + ' and 100 years — the model was not developed for younger children.');
       return;
     }
     if (!(state.target.value > 0)) { alert('Enter a valid trough target.'); return; }
@@ -4725,6 +4773,14 @@ table.data tr.assumed td { background: #fffbeb; }
       ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished — the forecast is not projected past the last entered dose, ' +
         'because the interval used so far is the loading schedule’s, not the eventual maintenance interval. Enter the planned maintenance ' +
         'doses as they are given, or switch to Steady state mode once maintenance begins.', 'warn'));
+    }
+    /* F8 (independent audit, 2026-09-13): passive, non-blocking note (author's
+     * choice) — informs without gating the workflow, same register as the
+     * other advisories on this list. Under pediatricBlockAge the run is
+     * refused outright (see runFit); this covers the age band that is
+     * allowed to run but was never part of the model's own development. */
+    if (fit.pediatricWarn) {
+      ad.push(noteHtml(M.drug().label + ' was not developed for children — this forecast extrapolates the model beyond the population it was built on.', 'warn'));
     }
     if (state.lloq > 0) {
       ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
