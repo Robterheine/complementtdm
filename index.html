@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 20:51 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 21:26 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -912,7 +912,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.24.0';
+  ECU.VERSION = '0.25.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2163,11 +2163,14 @@ table.data tr.assumed td { background: #fffbeb; }
     };
   }
 
-  /* Split-R-hat (Gelman et al.): each chain is halved and the between-segment
-   * variance is compared with the within-segment variance. ~1 means the chains
-   * describe the same distribution; > 1.05 is a convergence warning. Returns
-   * null when there are too few segments or the within-variance is degenerate. */
-  function splitRhat(chains, dim) {
+  /* Shared preamble for split-R-hat AND split-chain bulk ESS (F6, independent
+   * audit 2026-09-13): both diagnostics need the SAME definition of "the
+   * segments under comparison" -- each chain halved, the shorter segment
+   * length used throughout -- or R-hat warning and ESS looking fine could be
+   * silently comparing different data. Returns null when there are too few
+   * segments or the within-segment variance is degenerate (mirrors
+   * splitRhat's own pre-v0.24.0 guards exactly, just factored out). */
+  function splitChainStats(chains, dim) {
     var segs = [], c, h;
     for (c = 0; c < chains.length; c++) {
       var ch = chains[c];
@@ -2200,7 +2203,64 @@ table.data tr.assumed td { background: #fffbeb; }
     W /= vars.length;
     if (!(W > 1e-14)) return null;
     var varPlus = ((n - 1) / n) * W + B / n;
-    return Math.sqrt(varPlus / W);
+    return { segs: segs, n: n, means: means, W: W, varPlus: varPlus };
+  }
+
+  /* Split-R-hat (Gelman et al.): each chain is halved and the between-segment
+   * variance is compared with the within-segment variance. ~1 means the chains
+   * describe the same distribution; > 1.05 is a convergence warning. Returns
+   * null when there are too few segments or the within-variance is degenerate. */
+  function splitRhat(chains, dim) {
+    var st = splitChainStats(chains, dim);
+    return st ? Math.sqrt(st.varPlus / st.W) : null;
+  }
+
+  /* Split-chain bulk ESS (Vehtari et al. 2021 / Stan), replacing a pooled
+   * single-chain ess() call that ran Geyer's estimator on ALL chains
+   * concatenated together (F6, independent audit 2026-09-13). Concatenating
+   * unmixed chains does not reliably bias the pooled estimate in one
+   * direction -- it can read too high or too low -- which is exactly why a
+   * pooled number cannot be trusted alongside split-R-hat: the two were not
+   * even asking the same question. This uses the SAME chain-halving as
+   * splitRhat (splitChainStats), so a fit that R-hat flags as unmixed is
+   * measured by the same segments ESS reports on, not a different pooling.
+   *
+   * Per split-chain autocovariance is centered on that split-chain's OWN mean,
+   * then averaged across split-chains -- a chain stuck in a different region
+   * contributes its own (possibly high) autocorrelation without dragging
+   * another chain's estimate toward a spurious cross-chain mean. Geyer's
+   * initial monotone positive sequence (same style as the single-chain ess()
+   * above) truncates the lag sum; rho at lag 0 is fixed at 1 by definition
+   * (Vehtari et al.), not derived from dividing something by itself. */
+  function bulkEss(chains, dim) {
+    var st = splitChainStats(chains, dim);
+    if (!st || !(st.varPlus > 1e-14)) return null;
+    var segs = st.segs, n = st.n, means = st.means, W = st.W, varPlus = st.varPlus;
+    if (n < 4) return segs.length * n;
+    var maxLag = Math.min(Math.floor(n / 4), 200);
+    var acovBar = new Array(maxLag + 1).fill(0);
+    for (var s = 0; s < segs.length; s++) {
+      var seg = segs[s], m = means[s];
+      for (var lag = 0; lag <= maxLag; lag++) {
+        var acc = 0;
+        for (var k = 0; k < n - lag; k++) acc += (seg[k][dim] - m) * (seg[k + lag][dim] - m);
+        acovBar[lag] += (acc / n) / segs.length;
+      }
+    }
+    function rhoHat(lag) { return lag === 0 ? 1 : 1 - (W - acovBar[lag]) / varPlus; }
+    var prev = Infinity, pairSum = 0;
+    for (var mLag = 0; 2 * mLag + 1 <= maxLag; mLag++) {
+      var gamma = rhoHat(2 * mLag) + rhoHat(2 * mLag + 1);
+      if (gamma <= 0) break;
+      if (gamma > prev) gamma = prev;
+      prev = gamma;
+      pairSum += gamma;
+    }
+    var tau = -1 + 2 * pairSum;
+    if (!(tau > 0)) tau = 1;
+    var total = segs.length * n;
+    var out = total / tau;
+    return Math.max(1, Math.min(total, out));
   }
 
   // ------------------------- Prior / draws --------------------------------
@@ -2523,7 +2583,7 @@ table.data tr.assumed td { background: #fffbeb; }
 
     // ---- MAP + MCMC ----
     var mapRes = null, cov = null, covInfo = null, draws = null, acceptance = 0;
-    var essCL = null, essV1 = null, essAll = null;
+    var essCL = null, essV1 = null, essAll = null, essMin = null;
     var etaInformation = null, etaCorr = null;
     var rhat = null, nChains = 0;
     if (obsFit.length) {
@@ -2553,12 +2613,22 @@ table.data tr.assumed td { background: #fffbeb; }
       rhat = mcmc.rhat;
       nChains = mcmc.nChains;
       if (!draws.length) draws = [mapRes.x.slice()];
+      /* F6 (independent audit, 2026-09-13): essAll used to run the pooled,
+       * single-chain ess() on ALL chains concatenated together -- so R-hat
+       * (already split-chain) and ESS could silently be measuring different
+       * things, and a chain that never mixed would not reliably show up as
+       * low ESS. bulkEss() uses the SAME chain-halving as splitRhat. */
       essAll = [];
       for (var ed = 0; ed < mapRes.x.length; ed++) {
-        essAll.push(ess(draws.map(function (d) { return d[ed]; })));
+        essAll.push(bulkEss(mcmc.chains, ed));
       }
       essCL = essAll[0];
       essV1 = essAll.length > 1 ? essAll[1] : null;
+      // Worst-informed parameter, not just CL: a 6-eta crovalimab posterior
+      // can have ka or F poorly mixed while CL looks fine. null entries
+      // (too few usable segments) are excluded rather than treated as 0.
+      var essFinite = essAll.filter(function (v) { return v != null && isFinite(v); });
+      essMin = essFinite.length ? Math.min.apply(null, essFinite) : null;
       // v0.9.1 identifiability diagnostics: per-eta shrinkage toward the prior
       // (1 − posterior variance / prior variance; 0 = data uninformative for
       // that eta, ~1 = well determined) and the conditional correlation matrix
@@ -2742,6 +2812,7 @@ table.data tr.assumed td { background: #fffbeb; }
       essCL: essCL,
       essV1: essV1,
       essAll: essAll,
+      essMin: essMin,
       etaInformation: etaInformation,
       etaCorr: etaCorr,
       etaDim: omega.dims,
@@ -3031,6 +3102,8 @@ table.data tr.assumed td { background: #fffbeb; }
     simulateDraws: simulateDraws,
     ess: ess,
     splitRhat: splitRhat,
+    splitChainStats: splitChainStats,
+    bulkEss: bulkEss,
     tQuantile975: tQuantile975,
     etaInformationOf: etaInformationOf,
     corrMatrix: corrMatrix,
@@ -3975,10 +4048,17 @@ table.data tr.assumed td { background: #fffbeb; }
     if (t) { t.classList.remove('show'); t.innerHTML = ''; }
   }
 
-  /* P3: qualitative sampling-precision word (diagnostics stay in the details). */
+  /* P3: qualitative sampling-precision word (diagnostics stay in the details).
+   * F6 (independent audit, 2026-09-13): prefer essMin (the worst-informed
+   * parameter across ALL etas, e.g. ka or F on a 6-eta crovalimab posterior
+   * that CL alone would not show) over essCL alone; essCL remains the
+   * fallback when essMin isn't present (e.g. a synthetic/legacy fit object
+   * with only essCL set), so this stays a strict superset of the old
+   * behaviour rather than a breaking change. */
   function precisionWord(fit) {
     if (!fit || !fit.hasObs) return 'not applicable (population forecast)';
-    var ess = Math.max(0, fit.essCL || 0);
+    var essSrc = fit.essMin != null ? fit.essMin : fit.essCL;
+    var ess = Math.max(0, essSrc || 0);
     if (fit.covFallback || ess < 100) return 'low — consider re-sampling or additional samples';
     if (ess < 300) return 'intermediate';
     return 'good';
