@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 16:00 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 18:37 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -926,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.31.0';
+  ECU.VERSION = '0.32.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2545,15 +2545,24 @@ table.data tr.assumed td { background: #fffbeb; }
   function troughTimesOf(doses, interval) {
     var out = [];
     for (var i = 1; i < doses.length; i++) out.push(doses[i].t - 1e-6);
-    if (doses.length) out.push(virtualTroughTime(doses, interval));
+    var vt = virtualTroughTime(doses, interval);
+    if (vt != null) out.push(vt);
     return out.sort(function (a, b) { return a - b; });
   }
 
   /* The one trough that does NOT correspond to an entered dose: it assumes the
    * next administration happens one interval after the last entered one. The UI
-   * labels this row so it is never read as scheduled data. */
+   * labels this row so it is never read as scheduled data.
+   *
+   * v0.32.0: requires at least TWO real doses. With only one, `interval` is
+   * necessarily modalInterval()'s drug-default fallback (there is no second
+   * dose to derive a real one from) -- projecting a continuation from that
+   * would not be "the patient's own regimen, continued," it would be a guess
+   * dressed up as one. Author-reported: entering exactly one dose showed a
+   * second, "assumed" one on both the chart and the trough table that had
+   * nothing to do with anything the clinician had actually entered. */
   function virtualTroughTime(doses, interval) {
-    if (!doses.length) return null;
+    if (doses.length < 2) return null;
     var iv = interval > 0 ? interval : (M.drug().ssIntervalDefault || 14);
     return doses[doses.length - 1].t + iv - 1e-6;
   }
@@ -2726,7 +2735,11 @@ table.data tr.assumed td { background: #fffbeb; }
     var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
     var contAmt = doses[doses.length - 1].amt;
     var chartProjectedDoses = [];
-    if (!loadingPhase) {
+    /* v0.32.0: also requires at least two real doses, same reasoning as
+     * virtualTroughTime() above -- with only one dose, `interval` is
+     * necessarily the drug-default fallback, and drawing a "continuation"
+     * from a single data point is a guess, not a continuation. */
+    if (!loadingPhase && doses.length >= 2) {
       for (var pc = 1; pc <= 30; pc++) {
         var pt = lastDose + pc * interval;
         if (pt >= horizon) break;
