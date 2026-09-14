@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 08:21 UTC) -->
+<title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 13:19 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -588,12 +588,12 @@ table.data tr.assumed td { background: #fffbeb; }
 
 <header class="app no-print">
   <div>
-    <h1>Therapeutic drug monitoring — eculizumab · ravulizumab · crovalimab <span class="appver" id="titleVersion" title="Application version"></span></h1>
+    <h1>Therapeutic drug monitoring (eculizumab · ravulizumab · crovalimab) <span class="appver" id="titleVersion" title="Application version"></span></h1>
     <div class="sub">Model-informed precision dosing of therapeutic monoclonal antibodies for complement-mediated diseases. Privacy note: this app runs locally on your computer after downloading the webpage. No data are stored or processed online. All calculations are performed locally on the device you are using this website on.</div>
   </div>
   <div class="actions">
     <button id="btnAbout" title="Version, model documentation, contact and research-use disclaimer">About</button>
-    <button id="btnPrint" class="primary" title="Generate an A4 report of this patient, dosing schedule, forecast and advice — with prepared-by and signature lines">Print report</button>
+    <button id="btnPrint" class="primary" title="Generate an A4 report of this patient, dosing schedule, forecast and advice, with prepared-by and signature lines">Print report</button>
     <button id="btnExport" title="Download this session as a JSON file (pseudonym only, no identifiers required)">Export session</button>
     <button id="btnImport" title="Restore a previously exported session">Import session</button>
     <input type="file" id="importFile" accept=".json" style="display:none">
@@ -647,20 +647,20 @@ table.data tr.assumed td { background: #fffbeb; }
       <div class="sess-field">
         <div class="lbl-help">
           <label class="f" for="pt-wt">Weight (kg)</label>
-          <button type="button" class="info" data-help="wt" aria-label="What is the weight field for?" aria-expanded="false" title="Body weight in kg — covariate on clearance and volumes">ⓘ</button>
+          <button type="button" class="info" data-help="wt" aria-label="What is the weight field for?" aria-expanded="false" title="Body weight in kg (covariate on clearance and volumes)">ⓘ</button>
         </div>
-        <input type="number" id="pt-wt" min="25" max="300" step="0.5" placeholder="e.g. 70" title="Body weight in kg — covariate on clearance and volumes">
+        <input type="number" id="pt-wt" min="25" max="300" step="0.5" placeholder="e.g. 70" title="Body weight in kg (covariate on clearance and volumes)">
       </div>
       <div class="sess-field" id="ageRow" style="display:none">
         <div class="lbl-help">
           <label class="f" for="pt-age">Age (years)</label>
-          <button type="button" class="info" data-help="age" aria-label="What is the age field for?" aria-expanded="false" title="Age in years — covariate of the SC absorption rate (crovalimab)">ⓘ</button>
+          <button type="button" class="info" data-help="age" aria-label="What is the age field for?" aria-expanded="false" title="Age in years, a covariate of the SC absorption rate (crovalimab)">ⓘ</button>
         </div>
-        <input type="number" id="pt-age" min="1" max="100" step="1" placeholder="e.g. 36" title="Age in years — covariate of the SC absorption rate (crovalimab)">
+        <input type="number" id="pt-age" min="1" max="100" step="1" placeholder="e.g. 36" title="Age in years, a covariate of the SC absorption rate (crovalimab)">
       </div>
       <div class="sess-field" id="diseaseRow" style="display:none">
         <label class="f" for="pt-disease">Disease</label>
-        <select id="pt-disease" title="Indication — shown when disease is a covariate of the model">
+        <select id="pt-disease" title="Indication (shown when disease is a covariate of the model)">
           <option value="PNH">PNH</option>
           <option value="aHUS">aHUS</option>
         </select>
@@ -669,7 +669,7 @@ table.data tr.assumed td { background: #fffbeb; }
         <!-- folded on purpose: the active target is shown in the summary, so it
              can be read at a glance but not changed by an accidental click -->
         <details class="sess-fold" id="targetFold">
-          <summary title="Trough target used for P(trough &gt; target) — fold open to change it">
+          <summary title="Trough target used for P(trough &gt; target). Fold open to change it.">
             <span class="fold-lbl">Trough target</span>
             <span class="fold-val" id="targetFoldVal">–</span>
             <span class="fold-edit">change</span>
@@ -731,7 +731,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <div id="ssDoseUI" style="display:none">
       <div class="row3" style="margin-top:8px">
         <div><label class="f" for="ss-dose">Dose (mg)</label><input type="number" id="ss-dose" min="50" max="4000" step="any" placeholder="e.g. 900" title="Maintenance dose per administration"></div>
-        <div><label class="f" for="ss-interval">Interval (days)</label><input type="number" id="ss-interval" min="1" max="90" step="1" placeholder="e.g. 14" title="Dosing interval in days — e.g. 14 = q2w"></div>
+        <div><label class="f" for="ss-interval">Interval (days)</label><input type="number" id="ss-interval" min="1" max="90" step="1" placeholder="e.g. 14" title="Dosing interval in days (e.g. 14 = q2w)"></div>
         <div><label class="f" for="ss-anchor">Latest dose on</label><input type="datetime-local" id="ss-anchor" title="Date and time of the most recent administration; this is day 0 of the forecast"></div>
         <div id="ssDurWrap" style="display:none">
           <div class="lbl-help">
@@ -748,7 +748,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <div class="tbl-wrap"><table class="data" id="obsTable"></table></div>
     <form class="inline no-print" id="obsForm" novalidate>
       <div class="row3" style="margin-top:8px">
-        <div><label class="f" for="obs-dt">Date &amp; time</label><input type="datetime-local" id="obs-dt" title="Time the blood sample was drawn — trough just before the next dose, or a peak after it"></div>
+        <div><label class="f" for="obs-dt">Date &amp; time</label><input type="datetime-local" id="obs-dt" title="Time the blood sample was drawn (trough just before the next dose, or a peak after it)"></div>
         <div><label class="f" for="obs-val">Concentration (µg/mL)</label><input type="number" id="obs-val" min="0" max="2000" step="any" title="Measured serum concentration (1 µg/mL = 1 mg/L). Leave empty and tick '&lt; LLOQ' for a below-quantitation sample."></div>
         <div style="align-self:end;display:flex;gap:8px;align-items:center">
           <label class="check" style="margin:0" title="Tick if the result was below the assay's lower limit of quantification (requires an LLOQ value)"><input type="checkbox" id="obs-lloq" title="Mark this sample as below the lower limit of quantification"> &lt; LLOQ</label>
@@ -763,9 +763,9 @@ table.data tr.assumed td { background: #fffbeb; }
         <div>
           <div class="lbl-help">
             <label class="f" for="pt-lloq">LLOQ (µg/mL, optional)</label>
-            <button type="button" class="info" data-help="lloq" aria-label="What is the LLOQ?" aria-expanded="false" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">ⓘ</button>
+            <button type="button" class="info" data-help="lloq" aria-label="What is the LLOQ?" aria-expanded="false" title="Lower limit of quantification of your assay (needed for samples flagged below LLOQ)">ⓘ</button>
           </div>
-          <input type="number" id="pt-lloq" min="1" max="100" step="1" placeholder="e.g. 10" title="Lower limit of quantification of your assay — needed for samples flagged below LLOQ">
+          <input type="number" id="pt-lloq" min="1" max="100" step="1" placeholder="e.g. 10" title="Lower limit of quantification of your assay (needed for samples flagged below LLOQ)">
         </div>
         <div>
           <div class="lbl-help">
@@ -773,7 +773,7 @@ table.data tr.assumed td { background: #fffbeb; }
             <button type="button" class="info" data-help="errmult" aria-label="What does the assay error multiplier do?" aria-expanded="false" title="Scales the model's residual error to your local assay; 1 = model as published">ⓘ</button>
           </div>
           <input type="number" id="pt-errmult" min="0.1" max="10" step="0.1" value="1" title="Scales the model's residual error to your local assay; 1 = model as published">
-          <div class="legend-note">Default 1 — leave unchanged unless your lab advises otherwise.</div>
+          <div class="legend-note">Default 1. Leave unchanged unless your lab advises otherwise.</div>
         </div>
       </div>
     </details>
@@ -782,10 +782,10 @@ table.data tr.assumed td { background: #fffbeb; }
   <!-- ============ 3 · FORECAST & RESULTS ============ -->
   <div class="card" id="resultsCard">
     <h2><span class="stepnum">3</span> Forecast</h2>
-    <div class="stale-banner" id="staleBanner">Inputs changed — press “Run forecast” to update.</div>
+    <div class="stale-banner" id="staleBanner">Inputs changed. Press “Run forecast” to update.</div>
     <div id="chartBox">
       <div class="chart-head no-print">
-        <label class="check chart-log" title="Show the concentration axis on a logarithmic scale — values stay in µg/mL; useful when the band or target spans more than about 10-fold">
+        <label class="check chart-log" title="Show the concentration axis on a logarithmic scale. Values stay in µg/mL; useful when the band or target spans more than about 10-fold">
           <input type="checkbox" id="logY"> Log scale (y-axis)
         </label>
       </div>
@@ -810,10 +810,10 @@ table.data tr.assumed td { background: #fffbeb; }
           <button type="button" class="info" data-help="recency" aria-label="What does weighting of older samples do?" aria-expanded="false" title="Optional: give older measurements a larger residual error, so they influence the individual fit less than recent ones. Off by default.">ⓘ</button>
         </div>
         <select id="pt-recency" title="Optional: give older measurements a larger residual error, so they influence the individual fit less than recent ones. Off by default.">
-          <option value="off">Off — all samples weighted equally</option>
-          <option value="low">Low — residual error up to ×1.5 for older samples</option>
-          <option value="medium">Medium — up to ×2</option>
-          <option value="high">High — up to ×3</option>
+          <option value="off">Off (all samples weighted equally)</option>
+          <option value="low">Low (residual error up to ×1.5 for older samples)</option>
+          <option value="medium">Medium (up to ×2)</option>
+          <option value="high">High (up to ×3)</option>
         </select>
         <div class="legend-note" id="recencyHint"></div>
       </div>
@@ -821,7 +821,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <details class="help no-print" id="howto">
       <summary>How to read these results</summary>
       <ul>
-        <li><b>Band (5–95%):</b> 90% plausible range for the true concentration — it does not include assay error, so a future measured value may fall outside it.</li>
+        <li><b>Band (5–95%):</b> 90% plausible range for the true concentration. It does not include assay error, so a future measured value may fall outside it.</li>
         <li><b>P(trough &gt; target):</b> chance the true trough stays above your target, at your chosen dates.</li>
         <li><b>Median trough [5–95%]:</b> the same distribution in µg/mL.</li>
       </ul>
@@ -844,18 +844,18 @@ table.data tr.assumed td { background: #fffbeb; }
     </h2>
     <div class="iv-controls no-print">
       <label class="f" for="iv-vary">Vary</label>
-      <select id="iv-vary" title="Which quantity to scan a range of candidates around — the other stays fixed at the value entered">
+      <select id="iv-vary" title="Which quantity to scan a range of candidates around. The other stays fixed at the value entered.">
         <option value="interval">Interval</option>
         <option value="dose">Dose</option>
       </select>
       <label class="f" for="iv-amt">Dose (mg)</label>
-      <input type="number" id="iv-amt" step="any" title="Dose per administration to evaluate — prefilled with the last dose entered">
+      <input type="number" id="iv-amt" step="any" title="Dose per administration to evaluate, prefilled with the last dose entered">
       <label class="f" for="iv-interval">Interval (days)</label>
-      <input type="number" id="iv-interval" step="any" title="Dosing interval to evaluate — prefilled with the interval derived from the entered schedule">
+      <input type="number" id="iv-interval" step="any" title="Dosing interval to evaluate, prefilled with the interval derived from the entered schedule">
       <button class="primary" id="iv-run" title="Evaluate candidates around these values using this patient's fitted parameters" disabled>Explore</button>
       <span class="hint" id="iv-status"></span>
     </div>
-    <div id="iv-out"><div class="note">Run a forecast in card 3 first — this explorer reuses that fit's own parameters.</div></div>
+    <div id="iv-out"><div class="note">Run a forecast in card 3 first. This explorer reuses that fit's own parameters.</div></div>
   </div>
 
 </main>
@@ -873,10 +873,10 @@ table.data tr.assumed td { background: #fffbeb; }
 <!-- Footer: short identity line on screen; the full research-use disclaimer
      and model sources are in the About dialog and the printed report -->
 <footer class="app">
-  <div class="credit">Model-informed precision dosing of therapeutic monoclonal antibodies for complement inhibition —
+  <div class="credit">Model-informed precision dosing of therapeutic monoclonal antibodies for complement inhibition,
     for research use only · Developed by <b>Rob ter Heine</b> ·
     <a href="mailto:r.terheine@radboudumc.nl">r.terheine@radboudumc.nl</a> · v<span id="footerVersion"></span><br>
-    Research group: <a href="https://www.radboudumc.nl/en/research/research-groups/applied-pharmacometrics" target="_blank" rel="noopener">Radboud Applied Pharmacometrics</a> — Radboudumc, Nijmegen</div>
+    Research group: <a href="https://www.radboudumc.nl/en/research/research-groups/applied-pharmacometrics" target="_blank" rel="noopener">Radboud Applied Pharmacometrics</a>, Radboudumc, Nijmegen</div>
 </footer>
 
 <!-- About modal -->
@@ -896,10 +896,10 @@ table.data tr.assumed td { background: #fffbeb; }
     <p class="src">The report prints the current patient data, the last <b>run</b> forecast, model findings and the fields below. Both fields are optional and are kept in the session (and in exported session files) until you change them.</p>
     <label class="f" for="rp-prepared">Prepared by (name, role)</label>
     <input type="text" id="rp-prepared" placeholder="e.g. R. ter Heine, hospital pharmacist" autocomplete="off"
-      title="Who performed the calculations — printed in the report header and on the signature line">
-    <label class="f" for="rp-advice" style="margin-top:10px">Advice (free text — printed verbatim in the Advice section)</label>
+      title="Who performed the calculations, printed in the report header and on the signature line">
+    <label class="f" for="rp-advice" style="margin-top:10px">Advice (free text, printed verbatim in the Advice section)</label>
     <textarea id="rp-advice" rows="5" placeholder="e.g. Continue 1200 mg q2w; re-check trough before the dose on 12 Oct."
-      title="Your dose advice for the treating clinician. The model findings are printed separately above it — the advice itself is yours."></textarea>
+      title="Your dose advice for the treating clinician. The model findings are printed separately above it. The advice itself is yours."></textarea>
     <div class="actions-inline" style="margin-top:14px;display:flex;gap:8px">
       <button class="primary" id="rp-generate" style="flex:1" title="Build the report sheet and open the print dialog">Generate report</button>
       <button id="rp-cancel" title="Close without printing">Cancel</button>
@@ -926,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.30.1';
+  ECU.VERSION = '0.30.2';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1020,29 +1020,29 @@ table.data tr.assumed td { background: #fffbeb; }
       ssIntervalDefault: 14,
       obsValMax: 2000,
       targetRange: { min: 10, max: 500 },
-      wtTooltip: 'Body weight in kg — covariate on clearance and volumes (allometric scaling to 70 kg).',
+      wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: true,
       targetDefault: 75,
       targetHint: '≥ 50 µg/mL minimum; ≥ 75 µg/mL as a safe target.',
       targetSource: 'Target derived from ter Avest et al. (PMID 35238929).',
       targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/35238929/',
       diseaseNotes: {
-        PNH: 'PNH: no between-occasion variability in this model — the most informative setting for TDM.',
-        aHUS: 'aHUS: clearance varies between occasions (IOV folded into the prior) — wider uncertainty; sample around flares or regimen changes.'
+        PNH: 'PNH: no between-occasion variability in this model, the most informative setting for TDM.',
+        aHUS: 'aHUS: clearance varies between occasions (IOV folded into the prior), wider uncertainty; sample around flares or regimen changes.'
       },
       assumptions: [
         'Clearance is parallel linear + Michaelis–Menten (target-mediated). The nonlinear term dominates at low concentrations, so exposure is not proportional to dose.',
         'In aHUS, between-occasion clearance variability (IOV, variance 0.112) is folded into the clearance prior: multi-occasion samples are treated as one exchangeable block, because the IIV/IOV split is not identifiable from the sparse data of a single patient. Occasion-level random effects are not estimated separately.',
         'Because the occasion component stays folded in after fitting, the interval reported for an upcoming dose is somewhat narrower than the full occasion-to-occasion predictive uncertainty in aHUS.',
         'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier in "Assay settings", below the measurements.',
-        'IV infusion duration is adjustable per dose (10–360 minutes; default 30 minutes) — it can affect a fitted sample drawn during the infusion, but has negligible effect on troughs sampled after the infusion has long finished.'
+        'IV infusion duration is adjustable per dose (10–360 minutes; default 30 minutes); it can affect a fitted sample drawn during the infusion, but has negligible effect on troughs sampled after the infusion has long finished.'
       ]
     },
 
     ravulizumab: {
       id: 'ravulizumab',
       label: 'Ravulizumab',
-      article: 'simplified population PK model from the Ultomiris (ravulizumab) FDA review — final NONMEM control stream (provided with this project)',
+      article: 'simplified population PK model from the Ultomiris (ravulizumab) FDA review (final NONMEM control stream, provided with this project)',
       reviewRef: 'Model derived as a simplified version from FDA review documents:',
       reviewUrl: 'https://www.accessdata.fda.gov/drugsatfda_docs/nda/2018/761108Orig1s000TOC.html',
       info: '2-compartment linear model (FDA-review simplification, no Michaelis–Menten term). Allometric exponents 0.833 (CL, Q) and 0.62 (volumes). Control stream is in hours; rates scaled uniformly to per-day. 2.5-h IV infusions.',
@@ -1067,7 +1067,7 @@ table.data tr.assumed td { background: #fffbeb; }
       ssIntervalDefault: 56,
       obsValMax: 2000,
       targetRange: { min: 10, max: 500 },
-      wtTooltip: 'Body weight in kg — covariate on clearance and volumes (allometric scaling to 70 kg).',
+      wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: false,          // disease is not a covariate in this model
       targetDefault: 100,
       targetHint: '≥ 100 µg/mL minimum; ≥ 150 µg/mL for a more conservative approach.',
@@ -1108,7 +1108,7 @@ table.data tr.assumed td { background: #fffbeb; }
     crovalimab: {
       id: 'crovalimab',
       label: 'Crovalimab',
-      article: 'population PK model from the PiaSky (crovalimab) FDA review (NDA 761388) — final NONMEM control stream (run05, provided with this project)',
+      article: 'population PK model from the PiaSky (crovalimab) FDA review (NDA 761388), final NONMEM control stream (run05, provided with this project)',
       reviewRef: 'Model derived from FDA review documents:',
       reviewUrl: 'https://www.accessdata.fda.gov/drugsatfda_docs/nda/2024/761388Orig1s000TOC.html',
       info: '3-compartment model: SC depot (first-order absorption, bioavailability F = 0.83) into the central compartment, linear clearance and a peripheral compartment. Weight on CL/Q (0.75, ref. 75 kg) and V2/V3 (0.684); age on the SC absorption rate ((age/36)^-0.459). IV loading dose, SC thereafter. Time in days.',
@@ -1169,19 +1169,19 @@ table.data tr.assumed td { background: #fffbeb; }
       ssIntervalDefault: 28,
       obsValMax: 5000,                     // SC steady-state levels exceed the eculizumab-tuned default
       targetRange: { min: 10, max: 500 },
-      wtTooltip: 'Body weight in kg — covariate on clearance and volumes (allometric scaling to 75 kg in this model).',
+      wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 75 kg in this model).',
       diseaseCovariate: false,
       targetDefault: 75,
       targetHint: '≥ 75 µg/mL for complete C5 inhibition.',
       targetSource: 'Target derived from PMID 39835421.',
       targetSourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/39835421/',
       assumptions: [
-        'No anti-drug-antibody (ADA) effect: the control stream (run05) implements the ADA-negative population only — ADA-positive patients are outside this model\'s scope.',
+        'No anti-drug-antibody (ADA) effect: the control stream (run05) implements the ADA-negative population only. ADA-positive patients are outside this model\'s scope.',
         'The residual-error additive term (SD 1.01 mg/L) is the rich-sampling estimate; sparse TDM samples are therefore weighted relatively strongly.',
-        'The IV loading-dose infusion duration (1 h) is an operational assumption — the control stream does not fix D1 — and is adjustable (10–360 minutes). This applies to the loading dose only: every subsequent dose is subcutaneous, which has no infusion-duration concept at all.',
+        'The IV loading-dose infusion duration (1 h) is an operational assumption (the control stream does not fix D1) and is adjustable (10–360 minutes). This applies to the loading dose only: every subsequent dose is subcutaneous, which has no infusion-duration concept at all.',
         'All six population PK random effects (CL, central volume, Q, peripheral volume, SC absorption rate, bioavailability) are estimated from your samples (MAP-Bayes). With sparse SC-only sampling, absorption and clearance can partly trade off; the estimate stays anchored to the population prior.',
         'The IIV on the additive residual error is not estimated (not a PK parameter).',
-        'Age under 12 years: not accepted (no basis to extrapolate the absorption-rate covariate that far). Age 12–16: accepted, flagged — the model was not developed for children. Age 17 and over: no flag.'
+        'Age under 12 years: not accepted (no basis to extrapolate the absorption-rate covariate that far). Age 12–16: accepted, flagged, since the model was not developed for children. Age 17 and over: no flag.'
       ],
       yMaxCap: 12000                       // chart y-axis cap: q2w SC dosing reaches high steady-state levels
     }
@@ -4052,9 +4052,9 @@ table.data tr.assumed td { background: #fffbeb; }
       ? ' (Monte-Carlo 95% interval ' + Math.round(ci[0] * 100) + '–' + Math.round(ci[1] * 100) + '%)'
       : '';
     var pct = Math.round(p * 100);
-    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ' + pct + '% — the trough target is likely to be maintained' + ciTxt + '">P ' + pct + '%</span>';
-    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + pct + '% — intermediate attainment against your chosen target' + ciTxt + '">P ' + pct + '%</span>';
-    return '<span class="badge bad" data-help="pta" title="Probability ' + pct + '% — the target is unlikely to be attained' + ciTxt + '">P ' + pct + '%</span>';
+    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ' + pct + '%, the trough target is likely to be maintained' + ciTxt + '">P ' + pct + '%</span>';
+    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + pct + '%, intermediate attainment against your chosen target' + ciTxt + '">P ' + pct + '%</span>';
+    return '<span class="badge bad" data-help="pta" title="Probability ' + pct + '%, the target is unlikely to be attained' + ciTxt + '">P ' + pct + '%</span>';
   }
   /* Dosing intervals are whole days in practice; fmtC would render 14 as
    * "14.0", which reads like a measured quantity rather than a schedule. */
@@ -4074,12 +4074,12 @@ table.data tr.assumed td { background: #fffbeb; }
    * the About dialog. */
   var HELP = {
     ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for a different dose or interval, using the posterior the last run already produced \u2014 no refit needed. Choose what to vary: the other value stays fixed at what you entered. \u201cNext trough\u201d changes only the next administration; \u201csteady-state trough\u201d continues the patient on the new regimen until the concentration settles \u2014 for a drug that accumulates, the steady-state value is lower and is usually the one that matters. The app shows the consequences; choosing the regimen remains yours.',
-    wt: 'Body weight — the model uses it to adjust clearance and volumes. Enter the current weight in kg.',
-    age: 'Age in years — older patients absorb the under-the-skin (SC) dose more slowly. The model uses this to adjust the absorption rate.',
-    target: 'The lowest trough you want to keep. The table shows P(> target) — the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
-    lloq: 'Lowest concentration your lab can measure reliably (see the lab report, e.g. 10 \u00b5g/mL). Samples below this are still useful — tick \u201c< LLOQ\u201d when you add them.',
+    wt: 'Body weight, used by the model to adjust clearance and volumes. Enter the current weight in kg.',
+    age: 'Age in years. Older patients absorb the under-the-skin (SC) dose more slowly. The model uses this to adjust the absorption rate.',
+    target: 'The lowest trough you want to keep. The table shows P(> target), the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
+    lloq: 'Lowest concentration your lab can measure reliably (see the lab report, e.g. 10 \u00b5g/mL). Samples below this are still useful. Tick \u201c< LLOQ\u201d when you add them.',
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
-    errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes — the forecast then leans more on typical patients.',
+    errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes. The forecast then leans more on typical patients.',
     recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.',
     infdur: 'Optional \u2014 leave blank to use the drug\u2019s own default. How long the IV infusion actually ran, in minutes (10\u2013360). Not applicable to SC doses, which have no infusion \u2014 the depot absorbs at its own rate regardless of injection time. Affects the shape of the concentration curve during and shortly after the infusion; a sample drawn while it was still running is flagged separately, since it may not reflect a representative concentration.'
   };
@@ -4248,7 +4248,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!fit || !fit.hasObs) return 'not applicable (population forecast)';
     var essSrc = fit.essMin != null ? fit.essMin : fit.essCL;
     var ess = Math.max(0, essSrc || 0);
-    if (fit.covFallback || ess < 100) return 'low — consider re-sampling or additional samples';
+    if (fit.covFallback || ess < 100) return 'low (consider re-sampling or additional samples)';
     if (ess < 300) return 'intermediate';
     return 'good';
   }
@@ -4354,7 +4354,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var peak = spec.samplePeak + ' · trough just before the next dose';
     var h = $('sampleHint');
     if (h) h.textContent = '· ' + peak;
-    $('obs-dt').title = 'Time the blood sample was drawn — ' + peak;
+    $('obs-dt').title = 'Time the blood sample was drawn, ' + peak;
     // disease is only asked for when it is a covariate of the selected model;
     // age only when it is a covariate of the selected model (crovalimab ka)
     var dr = $('diseaseRow');
@@ -4660,12 +4660,12 @@ table.data tr.assumed td { background: #fffbeb; }
     var rel = relContext();
     if (!rel) {
       if (!state.doses.length && currentMode() === 'full') {
-        alert('Add at least one dose first — use the dose form below.');
+        alert('Add at least one dose first. Use the dose form below.');
       }
       return;
     }
     var wt = state.patient.wt;
-    if (!(wt >= 25 && wt <= 300)) { alert('Enter the patient\'s body weight (25–300 kg) — it is a covariate of the model.'); return; }
+    if (!(wt >= 25 && wt <= 300)) { alert('Enter the patient\'s body weight (25–300 kg), a covariate of the model.'); return; }
     // F8 (independent audit, 2026-09-13): crovalimab-only. Below
     // pediatricBlockAge the model has no basis to extrapolate the
     // absorption-rate covariate and is refused outright, same as an
@@ -4673,7 +4673,7 @@ table.data tr.assumed td { background: #fffbeb; }
     // runFit's pediatricWarn, rendered as a non-blocking advisory).
     var minAge = M.drug().pediatricBlockAge || 1;
     if (M.drug().covariateAge && !(state.patient.age >= minAge && state.patient.age <= 100)) {
-      alert(M.drug().label + ' requires an age between ' + minAge + ' and 100 years — the model was not developed for younger children.');
+      alert(M.drug().label + ' requires an age between ' + minAge + ' and 100 years. The model was not developed for younger children.');
       return;
     }
     if (!(state.target.value > 0)) { alert('Enter a valid trough target.'); return; }
@@ -4712,10 +4712,10 @@ table.data tr.assumed td { background: #fffbeb; }
           ' were excluded from the fit.', 'warn'));
       }
       if (state.obs.length && !state.obs.some(function (o) { return !o.lloq; })) {
-        warn.push(noteHtml('All measurements are below LLOQ — individualization relies entirely on censored (M3) information.', 'warn'));
+        warn.push(noteHtml('All measurements are below LLOQ. Individualization relies entirely on censored (M3) information.', 'warn'));
       }
       if (fit.covFallback) {
-        warn.push(noteHtml('The parameter uncertainty was estimated from the population prior (the curvature of the fit at the optimum was not usable) — interpret the prediction bands with extra caution and consider re-sampling.', 'warn'));
+        warn.push(noteHtml('The parameter uncertainty was estimated from the population prior (the curvature of the fit at the optimum was not usable). Interpret the prediction bands with extra caution and consider re-sampling.', 'warn'));
       }
       status.innerHTML = warn.join('');
       var hint = null;   // v0.11.0: chartHint element removed (info in x-label)
@@ -4860,7 +4860,7 @@ table.data tr.assumed td { background: #fffbeb; }
       xMin: xMin, xMax: xMax, yMax: yMax, yMin: yMin, logY: logY,
       futureFrom: rel.nowRel,
       xLabel: rel.ssMode ? 'Days since latest dose (day 0)' : 'Days since first dose',
-      yLabel: 'Concentration (µg/mL)' + (logY ? ' — log scale' : ''),
+      yLabel: 'Concentration (µg/mL)' + (logY ? ', log scale' : ''),
       bands: bands,
       hlines: [{ y: state.target.value, color: '#d97706', width: 2, dash: '8 5', label: 'Target trough ' + targetLabel() }],
       vlines: vlines,
@@ -4876,7 +4876,7 @@ table.data tr.assumed td { background: #fffbeb; }
         var parts = [M.drug().label + ' predicted concentration over time.'];
         parts.push(f && f.hasObs
           ? 'Individualised from ' + (f.obsData ? f.obsData.length : 0) + ' measured concentration(s).'
-          : 'Population forecast — no measurements fitted yet.');
+          : 'Population forecast. No measurements fitted yet.');
         var up = f && f.troughs ? f.troughs.filter(function (tr) { return tr.t > rel.nowRel - 0.02; }) : [];
         if (up.length) {
           var n = up[0];
@@ -4915,7 +4915,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var rel = fit.rel;
     var meta = fit.hasObs
       ? '<b>Individualized</b> to this patient\u2019s ' + rel.obsRel.length + ' measured concentration' + (rel.obsRel.length === 1 ? '' : 's') + '.'
-      : '<b>Population forecast</b> — no samples fitted yet. Add measurements and run again to individualize.';
+      : '<b>Population forecast.</b> No samples fitted yet. Add measurements and run again to individualize.';
 
     var pm = fit.map;
     var html = '<div class="result-meta">' + meta + '</div>';
@@ -4946,10 +4946,10 @@ table.data tr.assumed td { background: #fffbeb; }
         '<li><b>Best-fit (MAP) parameters:</b> clearance ' + fmtC(cl.med) + ' L/day [5–95% ' + fmtC(cl.p5) + '–' + fmtC(cl.p95) +
         '], central volume ' + fmtC(v1.med) + ' L [' + fmtC(v1.p5) + '–' + fmtC(v1.p95) + '].</li>' +
         '<li><b>Half-life near the trough:</b> ≈ ' + (isFinite(thalf) ? thalf.toFixed(1) + ' days' : '–') +
-        ' — it shortens at higher concentrations (saturable clearance).</li>' +
+        '. It shortens at higher concentrations (saturable clearance).</li>' +
         '<li><b>Individual shifts from the typical patient (η):</b> ' + fmtEtaVec(pm) + '.</li>' +
-        '<li><b>Sampling precision:</b> ' + precisionWord(fit) + ' — ' + fit.nDraws + ' posterior draws, ESS ≈ ' +
-        Math.max(1, Math.round(fit.essCL || 0)) + ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + '.</li>' +
+        '<li><b>Sampling precision:</b> ' + precisionWord(fit) + ' (' + fit.nDraws + ' posterior draws, ESS ≈ ' +
+        Math.max(1, Math.round(fit.essCL || 0)) + ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ').</li>' +
         '</ul></details>';
     } else {
       var ts = M.drug().THETA;
@@ -5000,7 +5000,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
         thr += '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
-          ' d) after the last entered dose — enter the actual planned doses, or use Steady state mode, to model a different interval.</div>';
+          ' d) after the last entered dose. Enter the actual planned doses, or use Steady state mode, to model a different interval.</div>';
       }
     } else {
       thr = '<div class="note">Add planned doses to see predicted troughs.</div>';
@@ -5014,7 +5014,7 @@ table.data tr.assumed td { background: #fffbeb; }
       ad.push(noteHtml('The target is not predicted to be reached with ≥ 90% probability at one or more upcoming doses.', 'warn'));
     }
     if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
-      ad.push(noteHtml(fit.disease + ': clearance varies between occasions — predictions are more uncertain; re-sample around flares or regimen changes.', 'warn'));
+      ad.push(noteHtml(fit.disease + ': clearance varies between occasions, so predictions are more uncertain; re-sample around flares or regimen changes.', 'warn'));
     }
     /* F7 (independent audit, 2026-09-13): the chart's projected-dose
      * continuation is already suppressed by the engine during a loading
@@ -5022,7 +5022,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * silently absent projection is easy to misread as "the app forgot,"
      * not "the app knows this interval isn't the maintenance one yet." */
     if (fit.loadingPhase) {
-      ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished — the forecast is not projected past the last entered dose, ' +
+      ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished. The forecast is not projected past the last entered dose, ' +
         'because the interval used so far is the loading schedule’s, not the eventual maintenance interval. Enter the planned maintenance ' +
         'doses as they are given, or switch to Steady state mode once maintenance begins.', 'warn'));
     }
@@ -5032,7 +5032,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * refused outright (see runFit); this covers the age band that is
      * allowed to run but was never part of the model's own development. */
     if (fit.pediatricWarn) {
-      ad.push(noteHtml(M.drug().label + ' was not developed for children — this forecast extrapolates the model beyond the population it was built on.', 'warn'));
+      ad.push(noteHtml(M.drug().label + ' was not developed for children. This forecast extrapolates the model beyond the population it was built on.', 'warn'));
     }
     /* Custom infusion times (2026-09-14, author-approved plan): a sample
      * drawn while a dose is still infusing is real, and — the concentration
@@ -5068,14 +5068,14 @@ table.data tr.assumed td { background: #fffbeb; }
      * means the individual estimate itself may be wrong. */
     if (fit.nExcluded > 0) {
       ad.push(noteHtml(fit.nExcluded + ' sample' + (fit.nExcluded > 1 ? 's are' : ' is') +
-        ' excluded from the fit — shown on the chart and in the report, but not used to estimate this patient\'s parameters.', 'info'));
+        ' excluded from the fit; shown on the chart and in the report, but not used to estimate this patient\'s parameters.', 'info'));
     }
     if (fit.map && fit.map.converged === false) {
       ad.push(noteHtml('The parameter search did not fully converge. Treat the individual estimates and the bands with caution, and check the entered doses and sample times.', 'warn'));
     }
     if (fit.map && fit.map.startGap > 1) {
       ad.push(noteHtml('The parameter search reached different solutions from different starting points (objective-function gap ' +
-        fmtC(fit.map.startGap) + '). The samples may not identify this patient uniquely — an additional sample at a different time would help.', 'warn'));
+        fmtC(fit.map.startGap) + '). The samples may not identify this patient uniquely; an additional sample at a different time would help.', 'warn'));
     }
     if (fit.rhat && fit.rhat.length) {
       var badR = [];
@@ -5085,7 +5085,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       if (badR.length) {
         ad.push(noteHtml('The posterior sampler did not fully mix for ' + esc(badR.join(', ')) +
-          ' (R-hat > 1.05). The reported intervals for those parameters may be unreliable — re-run, or add a sample.', 'warn'));
+          ' (R-hat > 1.05). The reported intervals for those parameters may be unreliable; re-run, or add a sample.', 'warn'));
       }
     }
     if (!state.obs.length) {
@@ -5104,7 +5104,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       if (weak.length) {
         var weakTxt = weak.length === 1 ? weak[0] : weak.join(', ').replace(/, ([^,]*)$/, ' and $1');
-        ad.push(noteHtml('Samples did not yet inform ' + weakTxt + ' — a peak sample alongside the trough sharpens the forecast.', 'info'));
+        ad.push(noteHtml('Samples did not yet inform ' + weakTxt + '; a peak sample alongside the trough sharpens the forecast.', 'info'));
       }
     }
     ab.innerHTML = ad.join('');
@@ -5188,7 +5188,7 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     state.doses.sort(function (a, b) { return a.t - b.t; });
     if (!state.doses.length) {
-      tb.innerHTML = '<tr><td class="empty-cell">No doses entered yet — add the actual dose dates and amounts below.</td></tr>';
+      tb.innerHTML = '<tr><td class="empty-cell">No doses entered yet. Add the actual dose dates and amounts below.</td></tr>';
       return;
     }
     var t0 = state.doses[0].t;
@@ -5201,7 +5201,7 @@ table.data tr.assumed td { background: #fffbeb; }
     // someone actually sets a custom duration on at least one dose.
     var showDur = state.doses.some(function (d) { return d.dur != null; });
     var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Dose (mg)</th>' +
-      (showRoute ? '<th title="Administration route — the first dose is IV, all later doses are subcutaneous">Route</th>' : '') +
+      (showRoute ? '<th title="Administration route (the first dose is IV, all later doses are subcutaneous)">Route</th>' : '') +
       (showDur ? '<th title="Infusion duration, where set to something other than the drug’s own default">Duration</th>' : '') +
       '<th></th></tr></thead><tbody>';
     state.doses.forEach(function (d, i) {
@@ -5247,7 +5247,7 @@ table.data tr.assumed td { background: #fffbeb; }
       h += '<tr' + (o.exclude ? ' class="obs-ex"' : '') + '><td>' + fmtC((o.t - t0) / DAY) + '</td><td>' + fmtDate(o.t) + '</td>' +
         '<td class="num">' + concCell + '</td>' +
         '<td class="num"><label class="check" style="margin:0;justify-content:flex-end" ' +
-        'title="Untick to keep this sample on record but exclude it from the fit — e.g. drawn after plasma exchange, apheresis or CRRT, or with a known pre-analytical problem">' +
+        'title="Untick to keep this sample on record but exclude it from the fit, e.g. drawn after plasma exchange, apheresis or CRRT, or with a known pre-analytical problem">' +
         '<input type="checkbox" data-fitobs="' + i + '"' + (o.exclude ? '' : ' checked') + '></label></td>' +
         '<td class="num"><button class="linklike" data-rmobs="' + i + '" title="Remove this measurement">remove</button></td></tr>';
       if (o.exclude) {
@@ -5531,11 +5531,11 @@ table.data tr.assumed td { background: #fffbeb; }
         if (advEl) { advEl.open = true; }
         var lq = $('pt-lloq');
         if (lq) { lq.focus(); }
-        alert('A below-LLOQ sample needs the assay LLOQ. It is under “Assay settings”, just below the measurements — now opened for you.');
+        alert('A below-LLOQ sample needs the assay LLOQ. It is under “Assay settings”, just below the measurements (now opened for you).');
         return;
       }
       var maxC = (M.drug().obsValMax || 2000);
-      if (!below && c > maxC) { alert('That concentration (' + c + ' µg/mL) is above the plausible range for ' + M.drug().label + ' (max ' + maxC + ' µg/mL). Check for a decimal or unit error — the app expects µg/mL (= mg/L).'); return; }
+      if (!below && c > maxC) { alert('That concentration (' + c + ' µg/mL) is above the plausible range for ' + M.drug().label + ' (max ' + maxC + ' µg/mL). Check for a decimal or unit error. The app expects µg/mL (= mg/L).'); return; }
       // Non-blocking order-of-magnitude challenge against the other samples:
       // a 10x transposition lands inside the permitted range in this field.
       if (!below && isFinite(c) && state.obs.length) {
@@ -5661,7 +5661,7 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     whatParts.push(esc(String((s.obs || []).length)) + ' measurement(s)');
     document.getElementById('restoreText').innerHTML =
-      'An unsaved session from ' + esc(when) + who + ' was found on this device — ' + whatParts.join(', ') + '.';
+      'An unsaved session from ' + esc(when) + who + ' was found on this device, ' + whatParts.join(', ') + '.';
     bar.hidden = false;
     document.getElementById('restoreYes').onclick = function () {
       applySession(s); bar.hidden = true;
@@ -5726,7 +5726,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var ivRunBtn = $('iv-run');
     if (ivRunBtn) {
       ivRunBtn.disabled = true;
-      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first — this explorer reuses that fit’s own parameters.</div>';
+      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first. This explorer reuses that fit’s own parameters.</div>';
     }
     $('staleBanner').style.display = 'none';
     updateRunReady();
@@ -5762,7 +5762,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!runBtn) return;
     if (!intervalExplorerAvailable()) {
       runBtn.disabled = true;
-      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first — this explorer reuses that fit’s own parameters.</div>';
+      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first. This explorer reuses that fit’s own parameters.</div>';
       return;
     }
     runBtn.disabled = false;
@@ -5834,7 +5834,7 @@ table.data tr.assumed td { background: #fffbeb; }
     var tgt = state.target.value;
     var byDose = sc.mode === 'dose';
     var nextTitle = byDose
-      ? 'Trough after the first administration at this dose, before the following one — the earliest point a dose change can be seen'
+      ? 'Trough after the first administration at this dose, before the following one, the earliest point a dose change can be seen'
       : 'Trough before the next administration, delayed to this interval';
     /* responsive-cards (screen only): below the phone breakpoint this table's
      * rows become label:value cards via CSS alone (data-label -> ::before),
@@ -5866,7 +5866,7 @@ table.data tr.assumed td { background: #fffbeb; }
       ? 'interval fixed at q' + fmtDays(sc.interval) + 'd'
       : 'dose fixed at ' + fmtC(sc.amt) + ' mg per administration';
     h += '<div class="legend-note"><b>Next trough</b> = ' +
-      (byDose ? 'the trough after one administration at this dose — the earliest a dose change can show up, since a trough measured before that dose cannot depend on its amount' :
+      (byDose ? 'the trough after one administration at this dose, the earliest a dose change can show up since a trough measured before that dose cannot depend on its amount' :
                 'only the next administration reflects the new interval') + '. ' +
       '<b>Steady-state trough</b> = the patient is continued on the new regimen until the concentration settles; ' +
       'for a drug that accumulates this is the lower, and usually the decision-relevant, number. ' +
@@ -5920,8 +5920,8 @@ table.data tr.assumed td { background: #fffbeb; }
      * stays unwrapped — overflow-x:auto is a screen concept, print has its
      * own table-sizing rules. */
     h += '<div class="tbl-wrap">' + intervalScanTableHtml(sc, false) + '</div>';
-    h += noteHtml('This shows what the model predicts. It is not a recommendation — ' +
-      'the choice of regimen, and the decision to act on it, remain yours. This exploration also prints in the report when generated.', 'info');
+    h += noteHtml('This shows what the model predicts. It is not a recommendation. ' +
+      'The choice of regimen, and the decision to act on it, remain yours. This exploration also prints in the report when generated.', 'info');
 
     $('iv-out').innerHTML = h;
     try { C.render(document.getElementById('ivChart'), cfg); } catch (e) { /* table still stands */ }
@@ -5934,9 +5934,9 @@ table.data tr.assumed td { background: #fffbeb; }
       '<p>Using this website, no data are remotely stored or processed. All calculations are performed ' +
       'locally on your device opening this website, to guarantee privacy and prevent data leaks.</p>';
     h += '<h3>Research use only</h3>' +
-      '<p><b>For research purposes only — not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in your browser — no data is transmitted or stored.</p>';
+      '<p><b>For research purposes only, not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in your browser; no data is transmitted or stored.</p>';
     h += '<h3>Models</h3>';
-    h += '<p class="src">For each model, assumptions and simplifications relative to its source are listed — read them before clinical interpretation.</p>';
+    h += '<p class="src">For each model, assumptions and simplifications relative to its source are listed. Read them before clinical interpretation.</p>';
     h += '<h3>Trough targets</h3>' +
       '<p>Each drug\'s default target is prefilled from the source below and can be overridden per patient. ' +
       'The target is the only number that turns a PK forecast into a clinical judgement, so its provenance is stated explicitly.</p>' +
@@ -5944,7 +5944,7 @@ table.data tr.assumed td { background: #fffbeb; }
     M.listDrugs().forEach(function (d) {
       var sp = M.spec(d.id);
       if (!sp.targetDefault) return;
-      h += '<li><b>' + esc(sp.label) + '</b> — ' + esc(String(sp.targetDefault)) + ' µg/mL. ' +
+      h += '<li><b>' + esc(sp.label) + ':</b> ' + esc(String(sp.targetDefault)) + ' µg/mL. ' +
         esc(sp.targetHint || '') +
         (sp.targetSource ? ' ' + esc(sp.targetSource) : '') +
         (sp.targetSourceUrl ? ' <a href="' + esc(sp.targetSourceUrl) + '" target="_blank" rel="noopener">source</a>' : '') +
@@ -5961,7 +5961,7 @@ table.data tr.assumed td { background: #fffbeb; }
       '(<a href="https://bpspubs.onlinelibrary.wiley.com/doi/10.1111/bcp.13901" target="_blank" rel="noopener">Br J Clin Pharmacol, doi:10.1111/bcp.13901</a>).</p>' +
       '<p><b>What this means for the forecast.</b> Occasion-level random effects are not estimated separately, ' +
       'and the occasion component stays folded in after fitting. Because the reported trough is the one before ' +
-      'the <i>next</i> dose — a future occasion — its interval is therefore somewhat narrower than the full ' +
+      'the <i>next</i> dose (a future occasion), its interval is therefore somewhat narrower than the full ' +
       'occasion-to-occasion predictive uncertainty. Re-sample around flares, regimen changes and any event ' +
       'that could shift clearance, rather than relying on a forecast projected far ahead.</p>' +
       '<p>PNH (eculizumab), ravulizumab and crovalimab have no IOV term in their source models, so nothing is folded in for them.</p>' +
@@ -5969,25 +5969,25 @@ table.data tr.assumed td { background: #fffbeb; }
       '<p>Under <b>Advanced fitting options</b>, older measurements can be given a larger residual error ' +
       'so that they influence the individual fit less than recent ones. A concentration describes the ' +
       'patient as they were on the day it was drawn; the further back that is, the less well it describes ' +
-      'them now — partly real change in the patient, partly a dosing history that is less reliably ' +
+      'them now (partly real change in the patient, partly a dosing history that is less reliably ' +
       'documented the further back one looks.</p>' +
       '<p>This is the existing assay-error multiplier made time-dependent, and nothing more. Each ' +
       'sample\'s residual standard deviation is multiplied by ' +
       '<b>1 + (M − 1) × (1 − e<sup>−age/365 d</sup>)</b>, where age is measured from the newest sample ' +
       'and the preset sets M: low ×1.5, medium ×2, high ×3. The newest sample is therefore never ' +
       'inflated, and because the multiplier saturates at M an old sample is <b>down-weighted but never ' +
-      'discarded</b> — at medium a year-old sample carries about 37% of its normal weight, falling ' +
+      'discarded</b>. At medium a year-old sample carries about 37% of its normal weight, falling ' +
       'towards 25% for much older ones. Since the multiplier acts on the SD, a sample\'s relative weight ' +
       'is exactly 1/M², independent of its concentration.</p>' +
       '<p>It is a statement about the residual error (SIGMA) alone: it applies to every drug and every ' +
       'disease, and is unrelated to the between-occasion variability described above, which is a ' +
       'random-effect (OMEGA) term. Neither M nor the 365-day time constant is taken from a publication, ' +
-      'and neither is ever estimated from the patient\'s own data — with the handful of samples a real ' +
+      'and neither is ever estimated from the patient\'s own data. With the handful of samples a real ' +
       'case carries neither would be identifiable, and a free inflation parameter would simply be driven ' +
       'up until the residuals vanished. They are a clinical judgement about how much to trust older ' +
       'measurements, made explicit and printed in the report.</p>' +
       '<p><b>Two cautions.</b> Widening the residual error widens the reported credible intervals, so a ' +
-      'forecast made with this option on is less certain, not more — that is the honest consequence of ' +
+      'forecast made with this option on is less certain, not more. That is the honest consequence of ' +
       'leaning on fewer samples. And age is not the same thing as relevance: a sample is often old ' +
       'because the patient was stable, and a recent one drawn <i>because</i> something changed. To set ' +
       'aside a sample you believe is unrepresentative, exclude it explicitly rather than relying on its ' +
@@ -6016,13 +6016,13 @@ table.data tr.assumed td { background: #fffbeb; }
         }
         if (s.targetHint) h += '<p class="src">Trough target: ' + esc(s.targetHint) + '</p>';
       } else {
-        h += '<p class="src">Parameters pending — forecasting disabled for this drug.</p>';
+        h += '<p class="src">Parameters pending. Forecasting disabled for this drug.</p>';
       }
       h += '</div>';
     });
     h += '<h3>Version</h3><p>v' + VERSION + '</p>';
     h += '<h3>Contact</h3>' +
-      '<p>Developed by <b>Rob ter Heine</b> · Radboudumc, Nijmegen, the Netherlands — for questions or collaboration: <a href="mailto:r.terheine@radboudumc.nl">r.terheine@radboudumc.nl</a></p>' +
+      '<p>Developed by <b>Rob ter Heine</b> · Radboudumc, Nijmegen, the Netherlands. For questions or collaboration: <a href="mailto:r.terheine@radboudumc.nl">r.terheine@radboudumc.nl</a></p>' +
       '<p>Research group: <a href="https://www.radboudumc.nl/en/research/research-groups/applied-pharmacometrics" target="_blank" rel="noopener">Radboud Applied Pharmacometrics</a>, Radboudumc, Nijmegen.</p>';
     return h;
   }
@@ -6085,7 +6085,7 @@ table.data tr.assumed td { background: #fffbeb; }
    * on-screen app is hidden entirely while printing. */
   function openReportDialog() {
     if (!state.fit) {
-      alert('Run a forecast first — the report documents the result of the last run.');
+      alert('Run a forecast first. The report documents the result of the last run.');
       return;
     }
     if (state.stale) {
@@ -6135,7 +6135,7 @@ table.data tr.assumed td { background: #fffbeb; }
       ? 'The forecast is individualized (MAP-Bayesian estimation with MCMC posterior sampling) on ' +
         rel.obsRel.length + ' measured concentration' + (rel.obsRel.length === 1 ? '' : 's') +
         (rel.excludedObs > 0 ? '; ' + rel.excludedObs + ' measurement(s) outside the simulated window were excluded.' : '.')
-      : 'No measured concentrations were available — this is a population (prior) forecast, not an individualized one.');
+      : 'No measured concentrations were available. This is a population (prior) forecast, not an individualized one.');
     if (fit.hasObs) {
       out.push('Individual clearance ' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) +
         '], central volume ' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + '].');
@@ -6163,10 +6163,10 @@ table.data tr.assumed td { background: #fffbeb; }
       }
     }
     if (st.obs.length && !st.obs.some(function (o) { return !o.lloq; })) {
-      out.push('All measurements are below the LLOQ — individualization relies entirely on censored (M3) information and is less certain.');
+      out.push('All measurements are below the LLOQ. Individualization relies entirely on censored (M3) information and is less certain.');
     }
     if (fit.covFallback) {
-      out.push('Parameter uncertainty was taken from the population prior (fit curvature was not usable) — interpret the prediction bands with extra caution.');
+      out.push('Parameter uncertainty was taken from the population prior (fit curvature was not usable). Interpret the prediction bands with extra caution.');
     }
     if (M.drug().IOV_DISEASES.indexOf(fit.disease) >= 0) {
       // F9 (independent audit, 2026-09-13): the old sentence said predictions
@@ -6177,7 +6177,7 @@ table.data tr.assumed td { background: #fffbeb; }
       // somewhat narrower than the full occasion-to-occasion uncertainty.
       // Both claims are simultaneously true and belong in one sentence, not
       // two competing ones (see INDEPENDENT_AUDIT.md's own reviewer note).
-      out.push(fit.disease + ': between-occasion variability in clearance is folded into the prior — individual predictions are more uncertain than for PNH, and the interval for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty because the occasion effect is not modelled separately.');
+      out.push(fit.disease + ': between-occasion variability in clearance is folded into the prior. Individual predictions are more uncertain than for PNH, and the interval for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty because the occasion effect is not modelled separately.');
     }
     return out;
   }
@@ -6192,10 +6192,10 @@ table.data tr.assumed td { background: #fffbeb; }
 
     // 1 — header
     h += '<div class="rp-head">';
-    h += '<div class="rp-title">Therapeutic drug monitoring report — ' + esc(spec.label) + '</div>';
+    h += '<div class="rp-title">Therapeutic drug monitoring report, ' + esc(spec.label) + '</div>';
     h += '<div class="rp-sub">Generated ' + fmtDate(Date.now()) +
       ' · complementtdm v' + esc(ECU.VERSION) +
-      ' · model: ' + esc(spec.label) + ' — ' + esc(spec.article) + '</div>';
+      ' · model: ' + esc(spec.label) + ' (' + esc(spec.article) + ')</div>';
     h += '</div>';
 
     // 2 — patient & data
@@ -6256,7 +6256,7 @@ table.data tr.assumed td { background: #fffbeb; }
       h += '</tbody></table>';
       if (rel.excludedObs > 0) h += '<p class="rp-note">' + rel.excludedObs + ' measurement(s) outside the simulated window were excluded from the fit.</p>';
     } else {
-      h += '<p class="rp-note">No measurements entered — the forecast is a population (prior) forecast.</p>';
+      h += '<p class="rp-note">No measurements entered. The forecast is a population (prior) forecast.</p>';
     }
 
     // 3 — fit quality
@@ -6264,7 +6264,7 @@ table.data tr.assumed td { background: #fffbeb; }
     h += '<tr><td>Method</td><td>' + (fit.hasObs ?
       'MAP-Bayesian individualization + MCMC (' + fit.nDraws + ' posterior draws, ESS ≈ ' + Math.max(1, Math.round(fit.essCL || 0)) +
       ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ')' :
-      'Population (prior) forecast — no individualization') + '</td></tr>';
+      'Population (prior) forecast, no individualization') + '</td></tr>';
     if (fit.hasObs) {
       h += '<tr><td>Clearance (individual)</td><td>' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) + ']</td></tr>';
       h += '<tr><td>Central volume (individual)</td><td>' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + ']</td></tr>';
@@ -6295,14 +6295,14 @@ table.data tr.assumed td { background: #fffbeb; }
      * each ACTUAL sample was discounted, at its own individual prediction. */
     if (fit && fit.recencyMaxMult > 1) {
       var rws = (fit.obsData || []).map(function (o) {
-        return fmtDate(rel.t0ms + o.t * DAY) + ' — ' + Math.round(o.ageDays) + ' d older than the newest sample, ' +
+        return fmtDate(rel.t0ms + o.t * DAY) + ', ' + Math.round(o.ageDays) + ' d older than the newest sample, ' +
           'residual SD ×' + o.recencyMult.toFixed(2) + ', weight ' + Math.round(100 * o.recencyWeight) + '%' +
           (o.exclude ? ' (excluded from the fit)' : '');
       });
       h += '<tr><td>Older-sample weighting</td><td>' + esc(fit.recency) +
         '. Each measurement\'s residual standard deviation is multiplied by ' +
         '1 + ' + (fit.recencyMaxMult - 1) + ' × (1 − e<sup>−age/' + fit.recencyTau + ' d</sup>), so it is ' +
-        'unchanged for the newest sample and rises towards ×' + fit.recencyMaxMult + ' for the oldest — ' +
+        'unchanged for the newest sample and rises towards ×' + fit.recencyMaxMult + ' for the oldest. ' +
         'a sample is down-weighted, never discarded. This scales the residual error (SIGMA) only; it is ' +
         'independent of the model\'s random-effect structure. Realised weights: ' +
         rws.map(esc).join('; ') + '.</td></tr>';
@@ -6362,7 +6362,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * asked about, not the result the fit produced from the entered doses. */
     if (fit.intervalScan && fit.intervalScan.rows && fit.intervalScan.rows.length) {
       var scP = fit.intervalScan;
-      h += '<h3 class="rp-h">Regimen exploration — ' +
+      h += '<h3 class="rp-h">Regimen exploration, ' +
         (scP.mode === 'dose' ? 'candidate doses' : 'candidate intervals') + '</h3>';
       h += '<p class="rp-note" style="margin-top:0">This is not the forecast above. It shows what this patient’s ' +
         'fitted parameters predict for the candidate ' + (scP.mode === 'dose' ? 'doses' : 'intervals') +
@@ -6393,7 +6393,7 @@ table.data tr.assumed td { background: #fffbeb; }
       spec.assumptions.forEach(function (a) { h += '<li>' + esc(a) + '</li>'; });
       h += '</ul>';
     }
-    h += '<p class="rp-note">For research purposes only — not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
+    h += '<p class="rp-note">For research purposes only, not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
 
     return h;
   }
