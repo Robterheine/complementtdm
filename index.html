@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 07:25 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 07:44 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -926,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.29.0';
+  ECU.VERSION = '0.30.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3932,10 +3932,24 @@ table.data tr.assumed td { background: #fffbeb; }
        * identifying value on its own and is unaffected. The JSON export
        * still carries the code, by design — it is the deliberate, portable,
        * user-initiated path, not something written silently in the background. */
+      /* Steady-state mode's own fields (ss-dose, ss-interval, ss-anchor,
+       * and since v0.29.0 ss-dur) were never covered here -- only
+       * state.doses/state.obs (full-schedule mode's own records). A
+       * steady-state session with no measurements entered yet read as
+       * completely empty and was never even offered for restore; one WITH
+       * measurements restored those, but not the regimen itself, and not
+       * even the fact that the app should be in steady-state mode at all.
+       * Mirrors exportJson()'s existing ss:{dose,interval,anchor,dur} shape
+       * exactly, so the two restore paths (autosave, JSON file) describe
+       * the same four fields the same way. */
+      var ss = currentMode() === 'ss' ? readSS(false) : null;
       localStorage.setItem(LS_KEY, JSON.stringify({
         v: ECU.VERSION, savedAt: Date.now(),
         patient: Object.assign({}, state.patient, { code: '' }), drug: state.drug, target: state.target,
         lloq: state.lloq, errMult: state.errMult, recency: state.recency,
+        mode: currentMode(),
+        ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString(),
+          dur: (!M.drug().adminRoutes && $('ss-dur') && $('ss-dur').value.trim() !== '') ? parseFloat($('ss-dur').value) : null } : null,
         doses: state.doses, obs: state.obs, report: state.report
       }));
     } catch (e) { /* quota or serialisation failure must never break the app */ }
@@ -3946,7 +3960,13 @@ table.data tr.assumed td { background: #fffbeb; }
       var raw = localStorage.getItem(LS_KEY);
       if (!raw) return null;
       var s = JSON.parse(raw);
-      if (!s || (!(s.doses && s.doses.length) && !(s.obs && s.obs.length))) return null;
+      // A pure steady-state regimen (dose/interval/anchor set, but no
+      // measurements entered yet) is just as much "something worth
+      // restoring" as a full-schedule session with doses/obs recorded --
+      // without this, a session that was only ever a configured regimen
+      // read as empty and was silently never offered for restore at all.
+      var hasSSRegimen = s && s.mode === 'ss' && s.ss && s.ss.dose > 0;
+      if (!s || (!(s.doses && s.doses.length) && !(s.obs && s.obs.length) && !hasSSRegimen)) return null;
       return s;
     } catch (e) { return null; }
   }
@@ -5628,9 +5648,20 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!bar) return;
     var when = fmtDate(s.savedAt || Date.now());
     var who = s.patient && s.patient.code ? ' (' + esc(s.patient.code) + ')' : '';
+    /* A steady-state session with no measurements yet used to read as
+     * "0 dose(s), 0 measurement(s)" -- accurate about state.doses (empty in
+     * ss mode by construction) but useless to a clinician deciding whether
+     * to restore it, since the actual thing worth restoring (the regimen)
+     * went unmentioned entirely. */
+    var whatParts = [];
+    if (s.mode === 'ss' && s.ss && s.ss.dose > 0) {
+      whatParts.push('a steady-state regimen (' + esc(String(s.ss.dose)) + ' mg q' + esc(String(s.ss.interval)) + 'd)');
+    } else {
+      whatParts.push(esc(String((s.doses || []).length)) + ' dose(s)');
+    }
+    whatParts.push(esc(String((s.obs || []).length)) + ' measurement(s)');
     document.getElementById('restoreText').innerHTML =
-      'An unsaved session from ' + esc(when) + who + ' was found on this device — ' +
-      esc(String((s.doses || []).length)) + ' dose(s), ' + esc(String((s.obs || []).length)) + ' measurement(s).';
+      'An unsaved session from ' + esc(when) + who + ' was found on this device — ' + whatParts.join(', ') + '.';
     bar.hidden = false;
     document.getElementById('restoreYes').onclick = function () {
       applySession(s); bar.hidden = true;
@@ -5664,6 +5695,24 @@ table.data tr.assumed td { background: #fffbeb; }
     applyDrugUI();
     state.target = s.target || { value: null };
     if (!(state.target.value > 0)) state.target.value = null;
+    /* Steady-state mode's own fields were never restored here at all --
+     * mirrors importJson()'s own restoration of the same ss:{dose,interval,
+     * anchor,dur} shape exactly, including the same validity guard
+     * (a parseable anchor date), so the two restore paths cannot silently
+     * disagree about what counts as a valid saved regimen. setMode() is
+     * called for BOTH branches, never left implicit -- otherwise a restored
+     * ss regimen would sit in the ss-* fields while the page silently stayed
+     * on whatever mode the UI happened to already be showing. */
+    var restoredMode = s.mode === 'ss' ? 'ss' : 'full';
+    if (restoredMode === 'ss' && s.ss && isFinite(Date.parse(s.ss.anchor))) {
+      $('ss-dose').value = s.ss.dose != null ? s.ss.dose : 900;
+      $('ss-interval').value = s.ss.interval != null ? s.ss.interval : 14;
+      $('ss-anchor').value = toLocalInput(new Date(Date.parse(s.ss.anchor)));
+      if ($('ss-dur')) $('ss-dur').value = (s.ss.dur != null && isFinite(s.ss.dur)) ? s.ss.dur : '';
+      setMode('ss');
+    } else {
+      setMode('full');
+    }
     syncInputs();
     renderDoses();
     renderObs();
