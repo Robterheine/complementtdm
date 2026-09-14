@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 13:19 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 16:00 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -926,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.30.2';
+  ECU.VERSION = '0.31.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -4073,7 +4073,7 @@ table.data tr.assumed td { background: #fffbeb; }
    * language on purpose; the technical wording remains in the `title`s and
    * the About dialog. */
   var HELP = {
-    ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for a different dose or interval, using the posterior the last run already produced \u2014 no refit needed. Choose what to vary: the other value stays fixed at what you entered. \u201cNext trough\u201d changes only the next administration; \u201csteady-state trough\u201d continues the patient on the new regimen until the concentration settles \u2014 for a drug that accumulates, the steady-state value is lower and is usually the one that matters. The app shows the consequences; choosing the regimen remains yours.',
+    ivexplore: 'Shows what this patient\u2019s own fitted parameters predict for a different dose or interval, using the posterior the last run already produced, no refit needed. Choose what to vary: the other value stays fixed at what you entered. The table shows the steady-state trough, once the patient is continued on the candidate regimen until the concentration settles. For a drug that accumulates, this is the lower, and usually the decision-relevant, number. The app shows the consequences; choosing the regimen remains yours.',
     wt: 'Body weight, used by the model to adjust clearance and volumes. Enter the current weight in kg.',
     age: 'Age in years. Older patients absorb the under-the-skin (SC) dose more slowly. The model uses this to adjust the absorption rate.',
     target: 'The lowest trough you want to keep. The table shows P(> target), the chance the true trough stays above this number. Left empty, the drug\u2019s usual target is used.',
@@ -5833,9 +5833,13 @@ table.data tr.assumed td { background: #fffbeb; }
   function intervalScanTableHtml(sc, forPrint) {
     var tgt = state.target.value;
     var byDose = sc.mode === 'dose';
-    var nextTitle = byDose
-      ? 'Trough after the first administration at this dose, before the following one, the earliest point a dose change can be seen'
-      : 'Trough before the next administration, delayed to this interval';
+    /* v0.31.0 (author request): the table now shows steady-state trough only,
+     * matching the chart above it -- which dropped its own "next dose only"
+     * series back in v0.15.0 for the same reason (two numbers answering
+     * different questions read as clutter). "Next" was still computed
+     * (bayes.js's intervalScan()/doseScan() keep doing so, other consumers
+     * still use it -- see tests/test_v013.js, test_v014.js), only no longer
+     * displayed anywhere in this card. */
     /* responsive-cards (screen only): below the phone breakpoint this table's
      * rows become label:value cards via CSS alone (data-label -> ::before),
      * not a second markup path — print keeps the plain <table> unaffected,
@@ -5844,8 +5848,6 @@ table.data tr.assumed td { background: #fffbeb; }
     var rowLabel = byDose ? 'Dose' : 'Interval';
     var h = '<table class="' + (forPrint ? 'rp-table' : 'data responsive-cards') + ' iv-table"><thead><tr>' +
       '<th>' + (byDose ? 'Dose' : 'Interval') + '</th>' +
-      '<th class="num" title="' + nextTitle + '">Next trough [5–95%]</th>' +
-      '<th class="num">P(&gt; ' + tgt + ')</th>' +
       '<th class="num" title="Trough once the patient has been continued on this regimen long enough to re-approach steady state">Steady-state trough [5–95%]</th>' +
       '<th class="num">P(&gt; ' + tgt + ')</th>' +
       '</tr></thead><tbody>';
@@ -5855,8 +5857,6 @@ table.data tr.assumed td { background: #fffbeb; }
       var label = byDose ? (fmtC(r.amt) + ' mg') : ('q' + fmtDays(r.interval) + 'd');
       h += '<tr class="' + (isBase ? 'iv-current' : '') + '">' +
         '<td data-label="' + rowLabel + '">' + label + (isBase ? ' <span class="tag-current">entered value</span>' : '') + '</td>' +
-        '<td class="num" data-label="Next trough">' + fmtC(r.next.med) + ' <span class="ci-range">[' + fmtC(r.next.p5) + '–' + fmtC(r.next.p95) + ']</span></td>' +
-        '<td class="num" data-label="P(next &gt; target)">' + ptaBadge(r.next.pTarget, r.next.pCI) + '</td>' +
         '<td class="num" data-label="Steady-state trough">' + fmtC(r.ss.med) + ' <span class="ci-range">[' + fmtC(r.ss.p5) + '–' + fmtC(r.ss.p95) + ']</span></td>' +
         '<td class="num" data-label="P(steady-state &gt; target)">' + ptaBadge(r.ss.pTarget, r.ss.pCI) + '</td>' +
         '</tr>';
@@ -5865,12 +5865,9 @@ table.data tr.assumed td { background: #fffbeb; }
     var fixedTxt = byDose
       ? 'interval fixed at q' + fmtDays(sc.interval) + 'd'
       : 'dose fixed at ' + fmtC(sc.amt) + ' mg per administration';
-    h += '<div class="legend-note"><b>Next trough</b> = ' +
-      (byDose ? 'the trough after one administration at this dose, the earliest a dose change can show up since a trough measured before that dose cannot depend on its amount' :
-                'only the next administration reflects the new interval') + '. ' +
-      '<b>Steady-state trough</b> = the patient is continued on the new regimen until the concentration settles; ' +
+    h += '<div class="legend-note"><b>Steady-state trough</b> = the patient is continued on the new regimen until the concentration settles; ' +
       'for a drug that accumulates this is the lower, and usually the decision-relevant, number. ' +
-      'Both use the parameters fitted to this patient, with the ' + fixedTxt + '.</div>';
+      'Uses the parameters fitted to this patient, with the ' + fixedTxt + '.</div>';
     return h;
   }
 
@@ -5909,8 +5906,7 @@ table.data tr.assumed td { background: #fffbeb; }
       title: 'Probability of staying above target by ' + (byDose ? 'dose' : 'dosing interval'),
       desc: 'Probability that the trough stays above ' + tgt + ' µg/mL for each candidate ' +
             (byDose ? 'dose' : 'dosing interval') + ', once the patient is continued on it long enough ' +
-            'to reach steady state. The values, including the effect of changing only the next dose, ' +
-            'are listed in the table below the chart.'
+            'to reach steady state. The values are listed in the table below the chart.'
     };
     h += '<div class="iv-chart" id="ivChart"></div>';
     /* v0.17.0 — this table had no scroll wrapper at all (unlike the dose and
