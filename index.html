@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-13 22:59 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 07:25 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -716,6 +716,13 @@ table.data tr.assumed td { background: #fffbeb; }
               <option value="sc">SC</option>
             </select>
           </div>
+          <div id="doseDurWrap" style="display:none">
+            <div class="lbl-help">
+              <label class="f" for="dose-dur">Infusion duration (min)</label>
+              <button type="button" class="info" data-help="infdur" aria-label="What does infusion duration affect?" aria-expanded="false" title="How long the IV infusion runs. Not applicable to SC doses. Leave blank to use the drug's own default.">ⓘ</button>
+            </div>
+            <input type="number" id="dose-dur" min="10" max="360" step="any" placeholder="e.g. 30" title="Infusion duration in minutes (10–360). Leave blank for the drug's default.">
+          </div>
           <div style="align-self:end"><button class="primary" type="submit" id="doseAdd" style="width:100%" title="Add this dose to the schedule">Add dose</button></div>
         </div>
       </form>
@@ -726,6 +733,13 @@ table.data tr.assumed td { background: #fffbeb; }
         <div><label class="f" for="ss-dose">Dose (mg)</label><input type="number" id="ss-dose" min="50" max="4000" step="any" placeholder="e.g. 900" title="Maintenance dose per administration"></div>
         <div><label class="f" for="ss-interval">Interval (days)</label><input type="number" id="ss-interval" min="1" max="90" step="1" placeholder="e.g. 14" title="Dosing interval in days — e.g. 14 = q2w"></div>
         <div><label class="f" for="ss-anchor">Latest dose on</label><input type="datetime-local" id="ss-anchor" title="Date and time of the most recent administration; this is day 0 of the forecast"></div>
+        <div id="ssDurWrap" style="display:none">
+          <div class="lbl-help">
+            <label class="f" for="ss-dur">Infusion duration (min)</label>
+            <button type="button" class="info" data-help="infdur" aria-label="What does infusion duration affect?" aria-expanded="false" title="Applied to every administration in this steady-state regimen. Leave blank to use the drug's own default.">ⓘ</button>
+          </div>
+          <input type="number" id="ss-dur" min="10" max="360" step="any" placeholder="e.g. 30" title="Infusion duration in minutes (10–360), applied to every dose in this regimen. Leave blank for the drug's default.">
+        </div>
       </div>
       <div class="legend-note" style="margin-top:6px">Previous cycles are simulated back to steady state; day 0 = the latest dose. To plan a regimen change, switch to “Full schedule”.</div>
     </div>
@@ -912,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.28.0';
+  ECU.VERSION = '0.29.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -989,7 +1003,18 @@ table.data tr.assumed td { background: #fffbeb; }
       // Residual error (Radboudumc assay; NONMEM $SIGMA):
       //   Y = IPRED + eps(1) + IPRED*eps(2)   (variances)
       SIGMA: { ADD: 19.1, PROP: 0.0185 },
-      INFUSION_D: 30 / 1440,               // fixed 30-minute IV infusion
+      INFUSION_D: 30 / 1440,               // default 30-minute IV infusion
+      /* Custom infusion times (2026-09-14, author-approved plan): the default
+       * above stays the fallback for any dose without its own duration; this
+       * declares the CLINICALLY sane range for a per-dose override, uniform
+       * across all three drugs by the author's own instruction. Minutes, not
+       * days -- the engine's own INFUSION_D is in days, but nobody enters a
+       * clinical duration as a fraction of a day, so the UI works in minutes
+       * and converts at the boundary (see fmtMinutes()/parseMinutes() in
+       * src/ui.js). No separate "default" field here on purpose: the default
+       * is always derived from INFUSION_D above (Math.round(INFUSION_D*1440)),
+       * so the two can never drift apart into disagreeing about the same fact. */
+      infusionMinutes: { min: 10, max: 360 },
       samplePeak: 'peak ≈ 30–60 min after start of the 0.5-h infusion',
       dose: { min: 50, max: 4000, step: 50, default: 900 },
       ssIntervalDefault: 14,
@@ -1009,7 +1034,8 @@ table.data tr.assumed td { background: #fffbeb; }
         'Clearance is parallel linear + Michaelis–Menten (target-mediated). The nonlinear term dominates at low concentrations, so exposure is not proportional to dose.',
         'In aHUS, between-occasion clearance variability (IOV, variance 0.112) is folded into the clearance prior: multi-occasion samples are treated as one exchangeable block, because the IIV/IOV split is not identifiable from the sparse data of a single patient. Occasion-level random effects are not estimated separately.',
         'Because the occasion component stays folded in after fitting, the interval reported for an upcoming dose is somewhat narrower than the full occasion-to-occasion predictive uncertainty in aHUS.',
-        'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier in "Assay settings", below the measurements.'
+        'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier in "Assay settings", below the measurements.',
+        'IV infusion duration is adjustable per dose (10–360 minutes; default 30 minutes) — it can affect a fitted sample drawn during the infusion, but has negligible effect on troughs sampled after the infusion has long finished.'
       ]
     },
 
@@ -1034,7 +1060,8 @@ table.data tr.assumed td { background: #fffbeb; }
       IOV_CL: 0,
       IOV_DISEASES: [],
       SIGMA: { ADD: 0, PROP: 0.0239 },     // proportional only (CMT=1; $SIGMA)
-      INFUSION_D: 2.5 / 24,                // D1 = 2.5-h infusion
+      INFUSION_D: 2.5 / 24,                // default D1 = 2.5-h infusion
+      infusionMinutes: { min: 10, max: 360 },
       samplePeak: 'peak at the end of the ~2.5-h infusion',
       dose: { min: 100, max: 6000, step: 100, default: 3000 },
       ssIntervalDefault: 56,
@@ -1049,6 +1076,7 @@ table.data tr.assumed td { background: #fffbeb; }
       assumptions: [
         'Simplified research re-implementation of the FDA-review population PK model (linear elimination, no IOV, weight as the only covariate); requires its own prospective validation.',
         'Implements the ADA-negative population only.',
+        'IV infusion duration is adjustable per dose (10–360 minutes; default 2.5 h).',
         // F8 (independent audit, 2026-09-13): displayed as fact, not a warning
         // -- author's own clinical judgement, no age gate needed since the
         // model has no age covariate at all to gate.
@@ -1106,7 +1134,8 @@ table.data tr.assumed td { background: #fffbeb; }
       IOV_CL: 0,
       IOV_DISEASES: [],
       SIGMA: { ADD: 1.02, PROP: 0.01277 }, // variances (SDs 1.01 and 0.113)
-      INFUSION_D: 1 / 24,                  // IV loading infusion (~1 h assumption)
+      INFUSION_D: 1 / 24,                  // default IV loading infusion (~1 h assumption)
+      infusionMinutes: { min: 10, max: 360 },   // loading dose only -- crovalimab's only IV administration
       KA_D: 0.126,                         // SC absorption rate at the reference age [1/day]
       BIOAVAIL_SC: 0.83,                   // F1
       adminRoutes: { first: 'iv', subsequent: 'sc' },  // IV loading, then SC
@@ -1149,7 +1178,7 @@ table.data tr.assumed td { background: #fffbeb; }
       assumptions: [
         'No anti-drug-antibody (ADA) effect: the control stream (run05) implements the ADA-negative population only — ADA-positive patients are outside this model\'s scope.',
         'The residual-error additive term (SD 1.01 mg/L) is the rich-sampling estimate; sparse TDM samples are therefore weighted relatively strongly.',
-        'The IV loading-dose infusion duration (1 h) is an operational assumption — the control stream does not fix D1.',
+        'The IV loading-dose infusion duration (1 h) is an operational assumption — the control stream does not fix D1 — and is adjustable (10–360 minutes). This applies to the loading dose only: every subsequent dose is subcutaneous, which has no infusion-duration concept at all.',
         'All six population PK random effects (CL, central volume, Q, peripheral volume, SC absorption rate, bioavailability) are estimated from your samples (MAP-Bayes). With sparse SC-only sampling, absorption and clearance can partly trade off; the estimate stays anchored to the population prior.',
         'The IIV on the additive residual error is not estimated (not a PK parameter).',
         'Age under 12 years: not accepted (no basis to extrapolate the absorption-rate covariate that far). Age 12–16: accepted, flagged — the model was not developed for children. Age 17 and over: no flag.'
@@ -2494,7 +2523,16 @@ table.data tr.assumed td { background: #fffbeb; }
       var d = doses[i];
       for (var s = 0; s <= 8; s++) add(d.t + s * 0.1);
       add(d.t - 1e-6);
-      add(d.t + dur);
+      /* Custom infusion times (2026-09-14): this used to add the point at
+       * `d.t + dur` -- the DRUG-WIDE default duration, not this dose's own.
+       * For a dose with a custom `d.dur` (now possible: 10-360 min, all
+       * comfortably inside the fixed s*0.1 backdrop's own 0-0.8-day span
+       * above, so no other change is needed here), the true end-of-infusion
+       * instant was never added, only an irrelevant point at wherever the
+       * DEFAULT infusion would have ended -- the same class of "grid built
+       * for the wrong dose shape" bug fixed in v0.27.0 for a different
+       * trigger (the chart's projected-continuation doses). */
+      add(d.t + (d.dur != null ? d.dur : dur));
     }
     var hStart = Math.max(lo, horizon - 1.5 * (interval || 14));
     for (var t2 = hStart; t2 <= horizon + 1e-9; t2 += 0.25) add(t2);
@@ -2577,6 +2615,53 @@ table.data tr.assumed td { background: #fffbeb; }
     if (allTimes.some(function (tv) { return Math.abs(tv) > 1e5; })) {
       throw new Error('A dose or measurement time looks like milliseconds, not days — this engine’s time unit is days throughout. Convert to days before calling runFit.');
     }
+    /* Custom infusion times (2026-09-14, author-approved plan). `d.dur` is in
+     * DAYS (the engine's native unit) throughout -- the UI works in minutes
+     * and converts at its own boundary, exactly like dose-dt/obs-dt already
+     * convert epoch-ms to days before reaching here. This is a defensive
+     * backstop, the same dual-layer pattern already used for weight and age
+     * (UI-level alert + engine-level throw): a non-positive duration would
+     * make `rate = amt/dd` in M.simulate() infinite or negative, and the
+     * clinical 10-360 min bound is exactly the kind of fact a units mistake
+     * (minutes entered as hours, or vice versa) would violate immediately --
+     * catching it here means a caller that bypasses the UI (JSON import, a
+     * future headless caller, a test) cannot silently feed the ODE a
+     * nonsensical rate. spec.infusionMinutes is the SAME bound the UI itself
+     * enforces, not a second, independently-chosen number. */
+    var infusionRangeD = M.drug().infusionMinutes
+      ? { min: M.drug().infusionMinutes.min / 1440, max: M.drug().infusionMinutes.max / 1440 }
+      : null;
+    if (infusionRangeD) {
+      doses.forEach(function (d) {
+        if (d.dur == null || d.route === 'sc' || d.bolus) return;
+        if (!(d.dur >= infusionRangeD.min && d.dur <= infusionRangeD.max)) {
+          throw new Error('A dose’s infusion duration (' + Math.round(d.dur * 1440) + ' min) is outside the ' +
+            M.drug().infusionMinutes.min + '–' + M.drug().infusionMinutes.max + ' minute range — check the units (minutes, not hours or days).');
+        }
+      });
+    }
+    /* Author-approved plan (2026-09-14): a sample drawn WHILE an infusion is
+     * still running is real -- either the concentration is genuinely still
+     * rising (mid zero-order-infusion), or, just as likely in practice, the
+     * sample was drawn through the same line the infusion is running
+     * through and is contaminated/diluted -- either way it "may impact
+     * estimation," in the author's own words, and the clinician should be
+     * told, not left to notice a discordant fit on their own. Checked
+     * against every FITTED sample only (obsFit) -- an excluded sample does
+     * not reach the likelihood, so it cannot impact estimation regardless.
+     * Every IV dose has SOME duration (custom or the drug default), so this
+     * check is well-defined uniformly across full-schedule and steady-state
+     * doses alike, with no special-casing between the two. */
+    var samplesDuringInfusion = [];
+    obsFit.forEach(function (o) {
+      doses.forEach(function (d) {
+        if (d.route === 'sc' || d.bolus) return;
+        var dd = d.dur != null ? d.dur : M.drug().INFUSION_D;
+        if (o.t > d.t + 1e-9 && o.t < d.t + dd - 1e-9) {
+          samplesDuringInfusion.push({ obsT: o.t, doseT: d.t, doseDurMin: Math.round(dd * 1440) });
+        }
+      });
+    });
     // Body weight is a covariate of every model — without it the allometric
     // scaling would silently evaluate to zero clearance. Fail loudly instead.
     // F8 (independent audit, 2026-09-13): widened from 35-200 kg -- the old
@@ -2906,6 +2991,7 @@ table.data tr.assumed td { background: #fffbeb; }
       chartProjectedDoses: chartProjectedDoses,
       loadingPhase: loadingPhase,
       pediatricWarn: pediatricWarn,
+      samplesDuringInfusion: samplesDuringInfusion,
       troughs: troughStats,
       clQ: { p5: quantileSorted(clArr, 0.05), med: quantileSorted(clArr, 0.5), p95: quantileSorted(clArr, 0.95) },
       v1Q: { p5: quantileSorted(v1Arr, 0.05), med: quantileSorted(v1Arr, 0.5), p95: quantileSorted(v1Arr, 0.95) },
@@ -3974,7 +4060,8 @@ table.data tr.assumed td { background: #fffbeb; }
     lloq: 'Lowest concentration your lab can measure reliably (see the lab report, e.g. 10 \u00b5g/mL). Samples below this are still useful — tick \u201c< LLOQ\u201d when you add them.',
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
     errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes — the forecast then leans more on typical patients.',
-    recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.'
+    recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.',
+    infdur: 'Optional \u2014 leave blank to use the drug\u2019s own default. How long the IV infusion actually ran, in minutes (10\u2013360). Not applicable to SC doses, which have no infusion \u2014 the depot absorbs at its own rate regardless of injection time. Affects the shape of the concentration curve during and shortly after the infusion; a sample drawn while it was still running is flagged separately, since it may not reflect a representative concentration.'
   };
 
   /* P-badge click popover: the badge's own (dynamic) title, incl. the
@@ -4167,6 +4254,43 @@ table.data tr.assumed td { background: #fffbeb; }
     state.recency = rc && RECENCY_PRESETS.indexOf(rc.value) >= 0 ? rc.value : 'off';
   }
 
+  /* Custom infusion times (2026-09-14, author-approved plan). The engine's own
+   * time unit is DAYS everywhere (INFUSION_D, d.dur) -- nobody enters a
+   * clinical duration as a fraction of a day, so the UI works in MINUTES and
+   * converts at this one boundary, the same pattern dose-dt/obs-dt already
+   * use to convert epoch-ms to days. durToMinutes()/minutesToDur() are the
+   * only two places this conversion happens; every other line of code deals
+   * in whichever unit it already dealt in before this feature existed. */
+  function durToMinutes(days) { return Math.round(days * 1440); }
+  function minutesToDur(min) { return min / 1440; }
+  // Display only (dose table, report): minutes below an hour, hours (1 dp)
+  // at or above -- matches the house style already used in the drug hints
+  // ("IV infusion over 2.5 h").
+  function fmtDur(days) {
+    var min = durToMinutes(days);
+    if (min < 60) return min + ' min';
+    var h = min / 60;
+    return (h % 1 === 0 ? h : h.toFixed(1)) + ' h';
+  }
+  /* Shows/hides the full-schedule duration field for whichever route is
+   * currently selected (SC has no infusion-duration concept at all -- see
+   * M.simulate()); a no-op, empty-string-safe no-adminRoutes drug is always
+   * IV, so always shown. Also prefills the placeholder with THIS drug's own
+   * default, converted to minutes, so an untouched field reads as informative
+   * rather than blank. Called from applyDrugUI() (drug changes) and the
+   * #dose-route change listener wired there (route changes, crovalimab only,
+   * since only crovalimab shows that selector at all). */
+  function syncDoseDurVisibility() {
+    var wrap = $('doseDurWrap');
+    if (!wrap) return;
+    var spec = M.drug();
+    var routeSel = $('dose-route');
+    var isIV = !spec.adminRoutes || !routeSel || routeSel.value !== 'sc';
+    wrap.style.display = isIV ? 'block' : 'none';
+    var durEl = $('dose-dur');
+    if (durEl && !durEl.value) durEl.placeholder = 'e.g. ' + durToMinutes(spec.INFUSION_D);
+  }
+
   /* Refresh the per-drug parts of the UI (dose field conventions, steady-state
    * default interval, sampling hints, model description, disease covariate,
    * trough-target default). */
@@ -4230,6 +4354,28 @@ table.data tr.assumed td { background: #fffbeb; }
     // per-drug dose-field route selector (crovalimab: IV loading, SC thereafter)
     var rw = $('doseRouteWrap');
     if (rw) rw.style.display = spec.adminRoutes ? 'block' : 'none';
+    /* Custom infusion times (2026-09-14, author-approved plan): the duration
+     * field is a property of the ROUTE (IV only -- SC has no infusion-duration
+     * concept at all, see M.simulate()), not of the drug. For a drug with no
+     * adminRoutes (eculizumab, ravulizumab) every dose is IV, so it is always
+     * shown; for crovalimab it tracks whichever route is currently selected
+     * in #dose-route, wired below (change listener, guarded so it is only
+     * attached once per page load, same pattern as the disease-note listener
+     * a few lines up). */
+    var routeSel = $('dose-route');
+    if (routeSel && !routeSel.dataset.durWired) {
+      routeSel.dataset.durWired = '1';
+      routeSel.addEventListener('change', syncDoseDurVisibility);
+    }
+    syncDoseDurVisibility();
+    // steady-state mode: crovalimab's SS regimen is 100% SC maintenance (no
+    // IV administration exists in that mode at all -- relContextSS() always
+    // uses adminRoutes.subsequent) so the field is not merely hidden, it is
+    // genuinely inapplicable; every other drug's SS regimen is 100% IV.
+    var ssDurW = $('ssDurWrap');
+    if (ssDurW) ssDurW.style.display = spec.adminRoutes ? 'none' : 'block';
+    var ssDurEl = $('ss-dur');
+    if (ssDurEl && !ssDurEl.value) ssDurEl.placeholder = 'e.g. ' + durToMinutes(spec.INFUSION_D);
     // measurement-field and target-field limits + tooltips come from the spec
     var ov = $('obs-val');
     if (ov) ov.max = spec.obsValMax || 2000;
@@ -4355,6 +4501,17 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!(I >= 1) || !(I <= 90)) bad.push('interval (1–90 days)');
     // (D and I are null when the fields are empty — the range checks above fire first)
     if (!isFinite(A) || A > Date.now() + DAY) bad.push('latest-dose date');
+    // Custom infusion times: only checked when the field is both visible
+    // (not adminRoutes -- crovalimab's SS regimen is 100% SC) and non-empty
+    // (blank is valid: it means "use the drug's default").
+    if (!M.drug().adminRoutes) {
+      var ssDurRaw2 = $('ss-dur') ? $('ss-dur').value.trim() : '';
+      if (ssDurRaw2 !== '') {
+        var ssDurVal = parseFloat(ssDurRaw2);
+        var imSS = M.drug().infusionMinutes || { min: 10, max: 360 };
+        if (!(ssDurVal >= imSS.min && ssDurVal <= imSS.max)) bad.push('infusion duration (' + imSS.min + '–' + imSS.max + ' min)');
+      }
+    }
     if (bad.length) {
       if (alertOn) alert('Steady-state regimen: enter a valid ' + bad.join(', ') + '.');
       return null;
@@ -4370,7 +4527,14 @@ table.data tr.assumed td { background: #fffbeb; }
     state.doses.forEach(function (d) { if (d.t < t0ms) t0ms = d.t; });
     if (!isFinite(t0ms)) return null;
     var dosesRel = state.doses.slice().map(function (d) {
-      return { t: (d.t - t0ms) / DAY, amt: d.amt, route: d.route || null };
+      // Custom infusion times (2026-09-14): `dur` must survive this mapping
+      // or a per-dose duration set in the dose form never reaches runFit at
+      // all -- it would sit in state.doses, visibly stored, and be silently
+      // dropped right here, the one place this whole feature could go
+      // completely inert without a single error anywhere.
+      var out = { t: (d.t - t0ms) / DAY, amt: d.amt, route: d.route || null };
+      if (d.dur != null) out.dur = d.dur;
+      return out;
     }).sort(function (a, b) { return a.t - b.t; });
     var excluded = 0;
     var obsRel = [];
@@ -4421,11 +4585,31 @@ table.data tr.assumed td { background: #fffbeb; }
     var k;
     // steady-state maintenance: all doses are of the "subsequent" route kind
     var ssRoute = M.drug().adminRoutes ? M.drug().adminRoutes.subsequent : null;
-    for (k = K; k >= 1; k--) dosesRel.push({ t: -k * I, amt: D, route: ssRoute });
-    dosesRel.push({ t: 0, amt: D, route: ssRoute });
+    /* Custom infusion times (2026-09-14): ONE scalar, applied to every
+     * synthesized dose alike (historical pre-roll and future cycles both) --
+     * there is no per-dose form in SS mode to give a different value to any
+     * one of them, and nobody has real per-cycle timestamps to attach one to
+     * anyway (author's own instruction: "1 setting for all administrations").
+     * Read only when relevant: crovalimab's SS regimen is 100% SC
+     * (ssRoute = adminRoutes.subsequent), which has no duration concept at
+     * all, so #ssDurWrap is hidden for it (applyDrugUI) and nothing here
+     * needs to special-case that -- ssDur simply stays null and `dur` is
+     * never set on any of these doses. */
+    var ssDur = null;
+    if (!M.drug().adminRoutes) {
+      var ssDurRaw = $('ss-dur') ? $('ss-dur').value.trim() : '';
+      if (ssDurRaw !== '') ssDur = minutesToDur(parseFloat(ssDurRaw));
+    }
+    function mkSSDose(t) {
+      var out = { t: t, amt: D, route: ssRoute };
+      if (ssDur != null) out.dur = ssDur;
+      return out;
+    }
+    for (k = K; k >= 1; k--) dosesRel.push(mkSSDose(-k * I));
+    dosesRel.push(mkSSDose(0));
     var nowRel = (Date.now() - A) / DAY;
     var ahead = 3 + (nowRel > 0 ? Math.floor(nowRel / I) : 0);
-    for (k = 1; k <= ahead; k++) dosesRel.push({ t: k * I, amt: D, route: ssRoute });
+    for (k = 1; k <= ahead; k++) dosesRel.push(mkSSDose(k * I));
     var wStart = -2 * I;
     var minObsRel = obsRel.length ? obsRel[0].t : Infinity;
     if (isFinite(minObsRel)) wStart = Math.min(wStart, minObsRel - 2);
@@ -4830,6 +5014,20 @@ table.data tr.assumed td { background: #fffbeb; }
     if (fit.pediatricWarn) {
       ad.push(noteHtml(M.drug().label + ' was not developed for children — this forecast extrapolates the model beyond the population it was built on.', 'warn'));
     }
+    /* Custom infusion times (2026-09-14, author-approved plan): a sample
+     * drawn while a dose is still infusing is real, and — the concentration
+     * may genuinely still be rising, or the draw may have picked up
+     * contamination/dilution from the same line the infusion is running
+     * through — either way it "may impact estimation" (the author's own
+     * framing); passive note, same register as every other advisory here,
+     * never a gate on the workflow. */
+    if (fit.samplesDuringInfusion && fit.samplesDuringInfusion.length) {
+      var infDates = fit.samplesDuringInfusion.map(function (s) {
+        return fmtDate(rel.t0ms + s.obsT * DAY) + ' (' + fmtDur(minutesToDur(s.doseDurMin)) + ' infusion starting ' + fmtDate(rel.t0ms + s.doseT * DAY) + ')';
+      });
+      ad.push(noteHtml((fit.samplesDuringInfusion.length > 1 ? 'Samples' : 'A sample') + ' drawn during an infusion may not reflect a representative concentration and may impact estimation: ' +
+        infDates.join('; ') + '.', 'warn'));
+    }
     if (state.lloq > 0) {
       ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
     }
@@ -4977,15 +5175,25 @@ table.data tr.assumed td { background: #fffbeb; }
     var now = Date.now();
     var ar = M.drug().adminRoutes;
     var showRoute = !!(ar && ar.first && ar.subsequent && ar.first !== ar.subsequent);
+    // Custom infusion times (2026-09-14): conditional, same convention as
+    // Route above — a session where nobody touched this stays exactly as
+    // light as before the feature existed; the column appears only once
+    // someone actually sets a custom duration on at least one dose.
+    var showDur = state.doses.some(function (d) { return d.dur != null; });
     var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Dose (mg)</th>' +
-      (showRoute ? '<th title="Administration route — the first dose is IV, all later doses are subcutaneous">Route</th>' : '') + '<th></th></tr></thead><tbody>';
+      (showRoute ? '<th title="Administration route — the first dose is IV, all later doses are subcutaneous">Route</th>' : '') +
+      (showDur ? '<th title="Infusion duration, where set to something other than the drug’s own default">Duration</th>' : '') +
+      '<th></th></tr></thead><tbody>';
     state.doses.forEach(function (d, i) {
       var relDay = ((d.t - t0) / DAY);
       var routeCell = showRoute
         ? '<td>' + (d.route === 'sc' ? 'SC' : 'IV') + '</td>'
         : '';
+      var durCell = showDur
+        ? '<td>' + (d.dur != null && d.route !== 'sc' ? fmtDur(d.dur) : (d.route === 'sc' ? '–' : fmtDur(M.drug().INFUSION_D) + ' (default)')) + '</td>'
+        : '';
       h += '<tr class="' + (d.t < now ? 'past' : '') + '"><td>' + fmtC(relDay) + '</td><td>' + fmtDate(d.t) + '</td>' +
-        '<td class="num"><b>' + d.amt + '</b></td>' + routeCell +
+        '<td class="num"><b>' + d.amt + '</b></td>' + routeCell + durCell +
         '<td class="num"><button class="linklike" data-rmdose="' + i + '" title="Remove this dose">remove</button></td></tr>';
     });
     h += '</tbody>';
@@ -5063,8 +5271,14 @@ table.data tr.assumed td { background: #fffbeb; }
       recency: state.recency,
       report: { preparedBy: state.report.preparedBy, advice: state.report.advice },
       mode: currentMode(),
-      ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString() } : null,
-      doses: state.doses.map(function (d) { return { t: new Date(d.t).toISOString(), amt: d.amt, route: d.route }; }),
+      /* Custom infusion times (2026-09-14): both the SS scalar and each
+       * full-schedule dose's own .dur must survive export/import, or a
+       * custom duration silently vanishes the moment a session is saved and
+       * reopened -- exactly the class of boundary this feature already had
+       * to fix once for relContext()/relContextSS(). */
+      ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString(),
+        dur: (!M.drug().adminRoutes && $('ss-dur') && $('ss-dur').value.trim() !== '') ? parseFloat($('ss-dur').value) : null } : null,
+      doses: state.doses.map(function (d) { return { t: new Date(d.t).toISOString(), amt: d.amt, route: d.route, dur: d.dur != null ? d.dur : null }; }),
       obs: state.obs.map(function (o) { return { t: new Date(o.t).toISOString(), c: o.c, lloq: o.lloq, exclude: !!o.exclude, note: o.note || '' }; })
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -5097,13 +5311,18 @@ table.data tr.assumed td { background: #fffbeb; }
           preparedBy: data.report && typeof data.report.preparedBy === 'string' ? data.report.preparedBy : '',
           advice: data.report && typeof data.report.advice === 'string' ? data.report.advice : ''
         };
-        state.doses = data.doses.map(function (d) { return { t: Date.parse(d.t), amt: d.amt, route: d.route || null }; });
+        state.doses = data.doses.map(function (d) {
+          var out = { t: Date.parse(d.t), amt: d.amt, route: d.route || null };
+          if (d.dur != null && isFinite(d.dur)) out.dur = d.dur;
+          return out;
+        });
         state.obs = (data.obs || []).map(function (o) { return { t: Date.parse(o.t), c: o.lloq && o.c == null ? null : parseFloat(o.c), lloq: !!o.lloq }; });
         var m = data.mode === 'ss' ? 'ss' : 'full';
         if (m === 'ss' && data.ss && isFinite(Date.parse(data.ss.anchor))) {
           $('ss-dose').value = data.ss.dose != null ? data.ss.dose : 900;
           $('ss-interval').value = data.ss.interval != null ? data.ss.interval : 14;
           $('ss-anchor').value = toLocalInput(new Date(Date.parse(data.ss.anchor)));
+          if ($('ss-dur')) $('ss-dur').value = (data.ss.dur != null && isFinite(data.ss.dur)) ? data.ss.dur : '';
           setMode('ss');
         } else {
           setMode('full');
@@ -5214,7 +5433,7 @@ table.data tr.assumed td { background: #fffbeb; }
         setMode(currentMode());
       });
     });
-    ['ss-dose', 'ss-interval'].forEach(function (id) {
+    ['ss-dose', 'ss-interval', 'ss-dur'].forEach(function (id) {
       $(id).addEventListener('input', markStale);
     });
     $('ss-anchor').addEventListener('change', markStale);
@@ -5244,10 +5463,30 @@ table.data tr.assumed td { background: #fffbeb; }
         var rv = $('dose-route').value;
         route = (rv === 'iv' || rv === 'sc') ? rv : (state.doses.length === 0 ? ar.first : ar.subsequent);
       }
+      /* Custom infusion times (2026-09-14, author-approved plan). SC has no
+       * infusion-duration concept at all (M.simulate() never reads .dur for
+       * an SC dose) -- the field is not read for one, regardless of whatever
+       * stray value is sitting in it. Left blank -> dur stays unset -> the
+       * engine falls back to the drug's own default (M.simulate()/buildGrid()
+       * both already do this), so an untouched field is a true no-op. */
+      var durMin = null;
+      if (route !== 'sc') {
+        var durRaw = $('dose-dur') ? $('dose-dur').value.trim() : '';
+        if (durRaw !== '') {
+          var im = M.drug().infusionMinutes || { min: 10, max: 360 };
+          durMin = parseFloat(durRaw);
+          if (!(durMin >= im.min && durMin <= im.max)) {
+            alert('Infusion duration must be between ' + im.min + ' and ' + im.max + ' minutes.');
+            return;
+          }
+        }
+      }
       // Duplicate guard: two clicks on "Add dose" silently doubled the amount
       var dup = state.doses.some(function (d) { return Math.abs(d.t - t) < 5 * 60000; });
       if (dup && !confirm('A dose is already recorded within five minutes of that time.\n\nAdd a second one anyway?')) return;
-      state.doses.push({ t: t, amt: amt, route: route });
+      var doseObj = { t: t, amt: amt, route: route };
+      if (durMin != null) doseObj.dur = minutesToDur(durMin);
+      state.doses.push(doseObj);
       $('dose-amt').value = '';
       renderDoses(); markStale();
     });
@@ -5922,16 +6161,25 @@ table.data tr.assumed td { background: #fffbeb; }
       esc(fit.recency) + ' (residual error up to ×' + fit.recencyMaxMult + ')</td></tr>';
     h += '</table>';
 
-    h += '<h3 class="rp-h">Dosing schedule' + (rel.ssMode ? ' (steady state: ' + rel.dosesRel.filter(function (d) { return d.amt; }).length + ' doses at ' + fmtC(rel.dosesRel[0].amt) + ' mg q' + (rel.dosesRel[1] ? fmtC(rel.dosesRel[1].t - rel.dosesRel[0].t) : '?') + 'd)' : '') + '</h3>';
+    // Custom infusion times (2026-09-14): the SS summary sentence is the
+    // ONLY disclosure point for SS mode (it has no per-dose table on screen
+    // or in the report, same as renderDoses() -- a fixed regimen is
+    // summarised, not itemised), so a non-default duration is folded into
+    // that one sentence rather than silently vanishing from the record.
+    var ssDurUsed = rel.ssMode && rel.dosesRel[0] && rel.dosesRel[0].dur != null ? rel.dosesRel[0].dur : null;
+    h += '<h3 class="rp-h">Dosing schedule' + (rel.ssMode ? ' (steady state: ' + rel.dosesRel.filter(function (d) { return d.amt; }).length + ' doses at ' + fmtC(rel.dosesRel[0].amt) + ' mg q' + (rel.dosesRel[1] ? fmtC(rel.dosesRel[1].t - rel.dosesRel[0].t) : '?') + 'd' + (ssDurUsed != null ? ', ' + fmtDur(ssDurUsed) + ' infusion' : '') + ')' : '') + '</h3>';
     if (rel.ssMode) {
       h += '<p class="rp-note">Steady state on a fixed regimen; day 0 = the latest dose. Previous cycles were simulated back to steady state.</p>';
     } else {
+      var showDurR = st.doses.some(function (d) { return d.dur != null; });
       h += '<table class="rp-table"><thead><tr><th>Date &amp; time</th><th class="num">Dose (mg)</th>' +
-        (spec.adminRoutes ? '<th>Route</th>' : '') + '<th>Status</th></tr></thead><tbody>';
+        (spec.adminRoutes ? '<th>Route</th>' : '') +
+        (showDurR ? '<th>Duration</th>' : '') + '<th>Status</th></tr></thead><tbody>';
       var now = Date.now();
       st.doses.slice().sort(function (a, b) { return a.t - b.t; }).forEach(function (d) {
         h += '<tr><td>' + fmtDate(d.t) + '</td><td class="num">' + d.amt + '</td>' +
           (spec.adminRoutes ? '<td>' + (d.route === 'sc' ? 'SC' : 'IV') + '</td>' : '') +
+          (showDurR ? '<td>' + (d.dur != null && d.route !== 'sc' ? fmtDur(d.dur) : (d.route === 'sc' ? '–' : fmtDur(spec.INFUSION_D) + ' (default)')) + '</td>' : '') +
           '<td>' + (d.t < now ? 'given' : 'planned') + '</td></tr>';
       });
       h += '</tbody></table>';
@@ -6115,6 +6363,11 @@ table.data tr.assumed td { background: #fffbeb; }
   ECU.reportHtml = reportHtml;
   ECU.findingsLines = findingsLines;
   ECU.ptaBadge = ptaBadge;   // testability (F3/F11, v0.23.0): pure string builder, no DOM
+  // testability (custom infusion times, 2026-09-14): pure unit-conversion/
+  // formatting functions, no DOM
+  ECU.durToMinutes = durToMinutes;
+  ECU.minutesToDur = minutesToDur;
+  ECU.fmtDur = fmtDur;
   /* Testability: novice-help internals (v0.8.0). */
   ECU.HELP = HELP;
   ECU.helpTextFor = helpTextFor;
