@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM — Eculizumab · Ravulizumab · Crovalimab</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 07:44 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 08:21 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -589,7 +589,7 @@ table.data tr.assumed td { background: #fffbeb; }
 <header class="app no-print">
   <div>
     <h1>Therapeutic drug monitoring — eculizumab · ravulizumab · crovalimab <span class="appver" id="titleVersion" title="Application version"></span></h1>
-    <div class="sub">Model-informed TDM and PK forecasting · all computation local, no data leaves this device</div>
+    <div class="sub">Model-informed precision dosing of therapeutic monoclonal antibodies for complement-mediated diseases. Privacy note: this app runs locally on your computer after downloading the webpage. No data are stored or processed online. All calculations are performed locally on the device you are using this website on.</div>
   </div>
   <div class="actions">
     <button id="btnAbout" title="Version, model documentation, contact and research-use disclaimer">About</button>
@@ -926,7 +926,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.30.0';
+  ECU.VERSION = '0.30.1';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -5930,6 +5930,9 @@ table.data tr.assumed td { background: #fffbeb; }
   // ------------------------------ About -----------------------------------
   function aboutHtml() {
     var h = '';
+    h += '<h3>Privacy</h3>' +
+      '<p>Using this website, no data are remotely stored or processed. All calculations are performed ' +
+      'locally on your device opening this website, to guarantee privacy and prevent data leaks.</p>';
     h += '<h3>Research use only</h3>' +
       '<p><b>For research purposes only — not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in your browser — no data is transmitted or stored.</p>';
     h += '<h3>Models</h3>';
