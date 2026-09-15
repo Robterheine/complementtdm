@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-15 14:20 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-15 19:43 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -750,7 +750,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <form class="inline no-print" id="obsForm" novalidate>
       <div class="row3" style="margin-top:8px">
         <div><label class="f" for="obs-dt">Date &amp; time</label><input type="datetime-local" id="obs-dt" title="Time the blood sample was drawn (trough just before the next dose, or a peak after it)"></div>
-        <div><label class="f" for="obs-val">Concentration (µg/mL)</label><input type="number" id="obs-val" min="0" max="2000" step="any" title="Measured serum concentration (1 µg/mL = 1 mg/L). Leave empty and tick '&lt; LLOQ' for a below-quantitation sample."></div>
+        <div><label class="f" for="obs-val">Concentration (µg/mL)</label><input type="number" id="obs-val" min="0.01" max="10000" step="any" title="Measured serum concentration (1 µg/mL = 1 mg/L). Leave empty and tick '&lt; LLOQ' for a below-quantitation sample."></div>
         <div style="align-self:end;display:flex;gap:8px;align-items:center">
           <label class="check" style="margin:0" title="Tick if the result was below the assay's lower limit of quantification (requires an LLOQ value)"><input type="checkbox" id="obs-lloq" title="Mark this sample as below the lower limit of quantification"> &lt; LLOQ</label>
           <button type="button" class="info" data-help="lloqbox" aria-label="What does below LLOQ mean?" aria-expanded="false" title="Tick if the result was below the assay's lower limit of quantification (requires an LLOQ value)">ⓘ</button>
@@ -939,7 +939,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.33.0';
+  ECU.VERSION = '0.34.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1031,7 +1031,8 @@ table.data tr.assumed td { background: #fffbeb; }
       samplePeak: 'peak ≈ 30–60 min after start of the 0.5-h infusion',
       dose: { min: 50, max: 4000, step: 50, default: 900 },
       ssIntervalDefault: 14,
-      obsValMax: 2000,
+      obsValMin: 0.01,
+      obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: true,
@@ -1078,7 +1079,8 @@ table.data tr.assumed td { background: #fffbeb; }
       samplePeak: 'peak at the end of the ~2.5-h infusion',
       dose: { min: 100, max: 6000, step: 100, default: 3000 },
       ssIntervalDefault: 56,
-      obsValMax: 2000,
+      obsValMin: 0.01,
+      obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: false,          // disease is not a covariate in this model
@@ -1180,7 +1182,8 @@ table.data tr.assumed td { background: #fffbeb; }
        * 1020 mg (≥100 kg). There is no 3400 mg dose. */
       dose: { min: 50, max: 2000, step: 10, default: 680 },
       ssIntervalDefault: 28,
-      obsValMax: 5000,                     // SC steady-state levels exceed the eculizumab-tuned default
+      obsValMin: 0.01,
+      obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 75 kg in this model).',
       diseaseCovariate: false,
@@ -4424,7 +4427,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (ssDurEl && !ssDurEl.value) ssDurEl.placeholder = 'e.g. ' + durToMinutes(spec.INFUSION_D);
     // measurement-field and target-field limits + tooltips come from the spec
     var ov = $('obs-val');
-    if (ov) ov.max = spec.obsValMax || 2000;
+    if (ov) { ov.min = spec.obsValMin || 0.01; ov.max = spec.obsValMax || 10000; }
     var tr = spec.targetRange || { min: 10, max: 500 };
     var tg = $('pt-target');
     if (tg) {
@@ -5560,7 +5563,9 @@ table.data tr.assumed td { background: #fffbeb; }
         alert('A below-LLOQ sample needs the assay LLOQ. It is under “Assay settings”, just below the measurements (now opened for you).');
         return;
       }
-      var maxC = (M.drug().obsValMax || 2000);
+      var minC = (M.drug().obsValMin || 0.01);
+      var maxC = (M.drug().obsValMax || 10000);
+      if (!below && c < minC) { alert('That concentration (' + c + ' µg/mL) is below the plausible range for ' + M.drug().label + ' (min ' + minC + ' µg/mL). Check for a decimal or unit error. The app expects µg/mL (= mg/L).'); return; }
       if (!below && c > maxC) { alert('That concentration (' + c + ' µg/mL) is above the plausible range for ' + M.drug().label + ' (max ' + maxC + ' µg/mL). Check for a decimal or unit error. The app expects µg/mL (= mg/L).'); return; }
       // Non-blocking order-of-magnitude challenge against the other samples:
       // a 10x transposition lands inside the permitted range in this field.
