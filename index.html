@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-14 18:37 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-15 14:20 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -592,6 +592,7 @@ table.data tr.assumed td { background: #fffbeb; }
     <div class="sub">Model-informed precision dosing of therapeutic monoclonal antibodies for complement-mediated diseases. Privacy note: this app runs locally on your computer after downloading the webpage. No data are stored or processed online. All calculations are performed locally on the device you are using this website on.</div>
   </div>
   <div class="actions">
+    <button id="btnGettingStarted" title="A short, step-by-step walkthrough for first-time use, opened in its own window">Getting started</button>
     <button id="btnAbout" title="Version, model documentation, contact and research-use disclaimer">About</button>
     <button id="btnPrint" class="primary" title="Generate an A4 report of this patient, dosing schedule, forecast and advice, with prepared-by and signature lines">Print report</button>
     <button id="btnExport" title="Download this session as a JSON file (pseudonym only, no identifiers required)">Export session</button>
@@ -879,6 +880,18 @@ table.data tr.assumed td { background: #fffbeb; }
     Research group: <a href="https://www.radboudumc.nl/en/research/research-groups/applied-pharmacometrics" target="_blank" rel="noopener">Radboud Applied Pharmacometrics</a>, Radboudumc, Nijmegen</div>
 </footer>
 
+<!-- Getting started: opened as a real second window (openGettingStarted() in
+     src/ui.js) so it can sit beside the app while someone follows along. This
+     modal is only the fallback for the rare case a popup blocker refuses
+     window.open() -- same pattern as the About modal below. -->
+<div class="modal-backdrop" id="gettingStartedModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gettingStartedTitle">
+    <button class="modal-close" id="gettingStartedClose" title="Close">×</button>
+    <h2 id="gettingStartedTitle">Getting started</h2>
+    <div id="gettingStartedBody"></div>
+  </div>
+</div>
+
 <!-- About modal -->
 <div class="modal-backdrop" id="aboutModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
@@ -926,7 +939,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.32.0';
+  ECU.VERSION = '0.33.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -5582,6 +5595,11 @@ table.data tr.assumed td { background: #fffbeb; }
     $('reportClose').addEventListener('click', closeReportDialog);
     $('reportModal').addEventListener('click', function (e) { if (e.target === $('reportModal')) closeReportDialog(); });
 
+    // Getting started (real window; this wiring is only the popup-blocker fallback)
+    $('btnGettingStarted').addEventListener('click', openGettingStarted);
+    $('gettingStartedClose').addEventListener('click', closeGettingStarted);
+    $('gettingStartedModal').addEventListener('click', function (e) { if (e.target === $('gettingStartedModal')) closeGettingStarted(); });
+
     // About modal
     $('btnAbout').addEventListener('click', openAbout);
     $('aboutClose').addEventListener('click', closeAbout);
@@ -5592,6 +5610,7 @@ table.data tr.assumed td { background: #fffbeb; }
     $('diagModal').addEventListener('click', function (e) { if (e.target === $('diagModal')) closeDiag(); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
+        if (!$('gettingStartedModal').hidden) closeGettingStarted();
         if (!$('aboutModal').hidden) closeAbout();
         if (!$('reportModal').hidden) closeReportDialog();
         if (!$('diagModal').hidden) closeDiag();
@@ -5934,6 +5953,105 @@ table.data tr.assumed td { background: #fffbeb; }
 
     $('iv-out').innerHTML = h;
     try { C.render(document.getElementById('ivChart'), cfg); } catch (e) { /* table still stands */ }
+  }
+
+  // ------------------------- Getting started -------------------------------
+  /* Author request (2026-09-15): a short first-time walkthrough, opened in a
+   * real second window rather than a modal, so a clinician who has never
+   * used the app can keep it open beside the real interface instead of it
+   * blocking the thing it describes. One page, not a step-syncing wizard --
+   * see the approved plan for why: syncing two windows to the app's own
+   * step state is real engineering for a "short" guide, and a stale sync
+   * would leave a first-time user worse off than no sync at all. Content
+   * carries its own humanizer pass; it is not a paraphrase of the app's own
+   * card titles and button labels, it quotes them verbatim on purpose, so
+   * this text cannot quietly drift from the real UI without a reader
+   * noticing the mismatch immediately. */
+  function gettingStartedBodyHtml() {
+    return '<p>This tool predicts blood levels of eculizumab, ravulizumab or crovalimab for ' +
+      'one specific patient, using their weight and any measured levels you enter. Nothing you ' +
+      'type leaves this device. There’s no server involved. Keep this window open and work ' +
+      'through the four cards on the main screen in order.</p>' +
+      '<ol class="gs-steps">' +
+      '<li><b>Drug &amp; patient.</b> Pick the drug, enter the patient’s weight and, for ' +
+      'crovalimab only, their age. A trough target is filled in for you; change it only if your ' +
+      'local practice uses a different number.</li>' +
+      '<li><b>Dosing schedule &amp; measured concentrations.</b> Choose <b>Full schedule</b> if ' +
+      'you know the actual dates and doses this patient has received, or <b>Steady state</b> if ' +
+      'they’re already on a stable maintenance regimen and you just want to enter the dose ' +
+      'and interval. Add any measured concentrations you have. The app works without them, but a ' +
+      'measured level is what lets it personalize the forecast instead of just showing the ' +
+      'population average.</li>' +
+      '<li><b>Forecast.</b> Press <b>Run forecast</b>. The chart shows the predicted ' +
+      'concentration over time; the table below it shows the predicted trough before each future ' +
+      'dose and the probability it stays above target. This is a prediction, not a ' +
+      'recommendation. The app never suggests a dose or interval; that decision stays yours.</li>' +
+      '<li><b>Regimen explorer</b> (optional). Once you’ve run a forecast, this card shows ' +
+      'what a different dose or interval would do for this same patient, using the fit you ' +
+      'already have. Skip it if you only need the forecast for the regimen already planned.</li>' +
+      '</ol>' +
+      '<p><b>When you’re done:</b> <b>Print report</b> asks for your name and advice, then ' +
+      'builds a one-page printable summary: the chart, the forecast, and your notes together. ' +
+      '<b>Export session</b> saves the case as a file you can reopen later or hand to a ' +
+      'colleague. If you close the tab by accident, reopening the app offers to restore what you ' +
+      'were working on.</p>' +
+      '<p>Curious about the model behind the numbers, or the research-use disclaimer? See ' +
+      '<b>About</b>, top right.</p>';
+  }
+  /* Wraps the fragment above into a full HTML document for the real popup
+   * window: there is no separate app.css to link to once build.mjs has
+   * inlined it into the single shipped file, so the popup carries its own
+   * small stylesheet, using the app's own palette (src/app.css's own
+   * :root) so it reads as the same product rather than a bolted-on help
+   * file. */
+  function gettingStartedDocHtml() {
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>Getting started: complementtdm</title>' +
+      '<style>' +
+      ':root{--bg:#eef2f6;--card:#fff;--ink:#0f172a;--line:#e2e8f0;--accent:#0e7490;--muted:#64748b}' +
+      '*{box-sizing:border-box}' +
+      'body{margin:0;background:var(--bg);color:var(--ink);' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;' +
+      'font-size:14px;line-height:1.55;padding:20px 22px}' +
+      'h1{font-size:19px;margin:0 0 4px 0}' +
+      '.gs-sub{color:var(--muted);font-size:12.5px;margin:0 0 18px 0}' +
+      'p{margin:0 0 12px 0}' +
+      'b{color:var(--ink)}' +
+      'ol.gs-steps{margin:0 0 16px 0;padding-left:20px}' +
+      'ol.gs-steps li{background:var(--card);border:1px solid var(--line);border-radius:8px;' +
+      'padding:10px 12px;margin-bottom:10px}' +
+      'ol.gs-steps li::marker{color:var(--accent);font-weight:700}' +
+      '</style></head><body>' +
+      '<h1>Getting started</h1>' +
+      '<div class="gs-sub">complementtdm, a short walkthrough for first-time use</div>' +
+      gettingStartedBodyHtml() +
+      '</body></html>';
+  }
+  /* A real second window when the browser allows it (window.open only works
+   * from a direct click, so this can never auto-open on page load -- that
+   * is a real constraint, not a design choice). Reused by name on repeat
+   * clicks rather than spawning a new window each time. Falls back to the
+   * existing modal pattern if a popup blocker returns null, so the guide
+   * stays reachable either way. */
+  function openGettingStarted() {
+    var w = null;
+    try {
+      w = window.open('', 'ctdmGettingStarted', 'width=440,height=720,resizable=yes,scrollbars=yes');
+    } catch (e) { w = null; }
+    if (w) {
+      try {
+        w.document.open();
+        w.document.write(gettingStartedDocHtml());
+        w.document.close();
+        w.focus();
+        return;
+      } catch (e) { /* fall through to the modal below */ }
+    }
+    $('gettingStartedBody').innerHTML = gettingStartedBodyHtml();
+    openModal('gettingStartedModal', 'gettingStartedClose');
+  }
+  function closeGettingStarted() {
+    closeModal('gettingStartedModal');
   }
 
   // ------------------------------ About -----------------------------------
@@ -6418,6 +6536,9 @@ table.data tr.assumed td { background: #fffbeb; }
     else init();
   }
 
+  // testability (Getting started, 2026-09-15): pure string builders, no DOM
+  ECU.gettingStartedBodyHtml = gettingStartedBodyHtml;
+  ECU.gettingStartedDocHtml = gettingStartedDocHtml;
   /* Testability: the report generator is exposed as a pure function over a
    * snapshot object (the same fields it reads from live state). Not used by
    * the UI itself. */
