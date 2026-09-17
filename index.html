@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-17 00:46 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-17 04:38 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -945,7 +945,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.35.0';
+  ECU.VERSION = '0.36.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3674,7 +3674,13 @@ table.data tr.assumed td { background: #fffbeb; }
         tip.style.display = 'block';
         var host = el.getBoundingClientRect();
         var tx = (X(t) / W) * host.width + 14;
-        tip.style.left = Math.min(tx, host.width - 190) + 'px';
+        // Two-sided clamp: the right-edge-only version could pin the tooltip
+        // off the LEFT edge on a narrow card (host.width - tipW going small
+        // or negative), which is exactly the width this app was redesigned
+        // for (v0.17.0's phone layout). tipW is an estimate of the tooltip's
+        // own (unstyled, content-sized) width, same figure the old clamp used.
+        var tipW = 190;
+        tip.style.left = Math.max(4, Math.min(tx, host.width - tipW - 4)) + 'px';
         tip.style.top = '10px';
       });
       rect.addEventListener('mouseleave', function () {
