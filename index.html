@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-17 04:38 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-18 04:18 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -945,7 +945,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.36.0';
+  ECU.VERSION = '0.37.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -4525,6 +4525,16 @@ table.data tr.assumed td { background: #fffbeb; }
 
   function markStale() {
     if (state.running) return;
+    // Author report (2026-09-18): editing or removing a measurement after a
+    // forecast had run left the old chart, trough table and advisories fully
+    // displayed underneath the stale banner -- easy to miss, and the stale
+    // numbers otherwise looked exactly like current ones. The displayed
+    // forecast is cleared the moment it goes stale, not just flagged.
+    // state.fit itself is kept (openReportDialog() still offers to print the
+    // last run's result, with its own explicit staleness confirm()); only the
+    // on-screen display resets, and only once, not on every further keystroke
+    // while already stale.
+    if (state.fit && !state.stale) showStaleResults();
     state.stale = true;
     var b = $('staleBanner');
     if (b) b.style.display = 'block';
@@ -5780,6 +5790,27 @@ table.data tr.assumed td { background: #fffbeb; }
     $('staleBanner').style.display = 'none';
     updateRunReady();
     updateStepper();
+  }
+
+  /* Called once from markStale() when a previous forecast exists and the
+   * inputs it was built from have just changed: the on-screen chart, trough
+   * table and advisories are for a set of inputs that no longer matches what
+   * is on screen, so they are cleared rather than left looking current.
+   * Distinct from showEmpty() (data has actually been entered and forecast
+   * before here, so "enter the dosing schedule" would be wrong) and does not
+   * touch state.fit itself -- the report dialog still offers to print the
+   * last run's result, with its own explicit staleness confirm(). Also resets
+   * card 4 (the regimen explorer), which reuses this same fit and would
+   * otherwise keep showing a scan computed from the now-outdated posterior. */
+  function showStaleResults() {
+    $('chart').innerHTML = '<div class="note">Forecast cleared because the inputs changed. Press “Run forecast” to see the updated prediction.</div>';
+    $('fitStatus').innerHTML = '';
+    $('paramBlock').innerHTML = $('troughBlock').innerHTML = $('advisoryBlock').innerHTML = '';
+    var ivRunBtn = $('iv-run');
+    if (ivRunBtn) {
+      ivRunBtn.disabled = true;
+      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first. This explorer reuses that fit’s own parameters.</div>';
+    }
   }
 
   /* -------------------- regimen explorer (v0.13.0 / v0.14.0) ---------------
