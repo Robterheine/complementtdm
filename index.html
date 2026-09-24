@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-18 04:18 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-24 07:03 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -656,7 +656,7 @@ table.data tr.assumed td { background: #fffbeb; }
           <label class="f" for="pt-wt">Weight (kg)</label>
           <button type="button" class="info" data-help="wt" aria-label="What is the weight field for?" aria-expanded="false" title="Body weight in kg (covariate on clearance and volumes)">ⓘ</button>
         </div>
-        <input type="number" id="pt-wt" min="25" max="300" step="0.5" placeholder="e.g. 70" title="Body weight in kg (covariate on clearance and volumes)">
+        <input type="number" id="pt-wt" min="3" max="300" step="0.5" placeholder="e.g. 70" title="Body weight in kg (covariate on clearance and volumes)">
       </div>
       <div class="sess-field" id="ageRow" style="display:none">
         <div class="lbl-help">
@@ -945,7 +945,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.37.0';
+  ECU.VERSION = '0.38.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1037,6 +1037,7 @@ table.data tr.assumed td { background: #fffbeb; }
       samplePeak: 'peak ≈ 30–60 min after start of the 0.5-h infusion',
       dose: { min: 50, max: 4000, step: 50, default: 900 },
       ssIntervalDefault: 14,
+      weightRange: { min: 3, max: 300 },   // kg; author's scope decision (see assumptions)
       obsValMin: 0.01,
       obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
@@ -1055,7 +1056,8 @@ table.data tr.assumed td { background: #fffbeb; }
         'In aHUS, between-occasion clearance variability (IOV, variance 0.112) is folded into the clearance prior: multi-occasion samples are treated as one exchangeable block, because the IIV/IOV split is not identifiable from the sparse data of a single patient. Occasion-level random effects are not estimated separately.',
         'Because the occasion component stays folded in after fitting, the interval reported for an upcoming dose is somewhat narrower than the full occasion-to-occasion predictive uncertainty in aHUS.',
         'The residual error is that of the Radboudumc assay; a local assay with different precision requires the assay-error multiplier in "Assay settings", below the measurements.',
-        'IV infusion duration is adjustable per dose (10–360 minutes; default 30 minutes); it can affect a fitted sample drawn during the infusion, but has negligible effect on troughs sampled after the infusion has long finished.'
+        'IV infusion duration is adjustable per dose (10–360 minutes; default 30 minutes); it can affect a fitted sample drawn during the infusion, but has negligible effect on troughs sampled after the infusion has long finished.',
+        'Body weight is accepted from 3 to 300 kg. The lower limit is the author\u2019s scope decision so that very young children can be monitored; the source model was developed in a population that included small children, but weights near the lower limit rely on allometric scaling from the 70 kg reference and should be interpreted with particular care.'
       ]
     },
 
@@ -1085,6 +1087,7 @@ table.data tr.assumed td { background: #fffbeb; }
       samplePeak: 'peak at the end of the ~2.5-h infusion',
       dose: { min: 100, max: 6000, step: 100, default: 3000 },
       ssIntervalDefault: 56,
+      weightRange: { min: 25, max: 300 },
       obsValMin: 0.01,
       obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
@@ -1188,6 +1191,7 @@ table.data tr.assumed td { background: #fffbeb; }
        * 1020 mg (≥100 kg). There is no 3400 mg dose. */
       dose: { min: 50, max: 2000, step: 10, default: 680 },
       ssIntervalDefault: 28,
+      weightRange: { min: 25, max: 300 },
       obsValMin: 0.01,
       obsValMax: 10000,
       targetRange: { min: 10, max: 500 },
@@ -2697,11 +2701,12 @@ table.data tr.assumed td { background: #fffbeb; }
     // scaling would silently evaluate to zero clearance. Fail loudly instead.
     // F8 (independent audit, 2026-09-13): widened from 35-200 kg -- the old
     // hard cap refused a real, plausible obese PNH/aHUS patient outright
-    // rather than flagging the extrapolation. 25-300 kg is the author's own
-    // judgement of the adult range worth covering; no per-drug distinction
-    // is drawn (weight is a covariate for all three via allometric scaling).
-    if (!(input.wt >= 25 && input.wt <= 300)) {
-      throw new Error('Body weight is required (25–300 kg) — it is a covariate of the model.');
+    // rather than flagging the extrapolation. The range is the author's own
+    // per-drug scope decision (spec.weightRange; v0.38.0 lowered eculizumab's
+    // minimum to 3 kg so very young children can be monitored).
+    var wtRange = M.drug().weightRange || { min: 25, max: 300 };
+    if (!(input.wt >= wtRange.min && input.wt <= wtRange.max)) {
+      throw new Error('Body weight is required (' + wtRange.min + '–' + wtRange.max + ' kg) — it is a covariate of the model.');
     }
     /* F8 (independent audit, 2026-09-13): engine-level backstop, mirroring the
      * weight check above -- the UI already refuses to run below this age, but
@@ -4195,12 +4200,17 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   /* P1: the Run button teaches the requirements while disabled. */
+  // The accepted body-weight range is a per-drug spec field (v0.38.0);
+  // the fallback only covers a spec that predates it.
+  function weightRange() { return M.drug().weightRange || { min: 25, max: 300 }; }
+  function weightInRange(w) { var r = weightRange(); return w >= r.min && w <= r.max; }
+
   function updateRunReady() {
     if (typeof document === 'undefined') return;
     var btn = $('btnRun'), hint = $('runHint');
     if (!btn) return;
     readPatient();
-    var wtOk = state.patient.wt >= 25 && state.patient.wt <= 300;  // F8: widened from 35-200
+    var wtOk = weightInRange(state.patient.wt);
     // F8: only crovalimab declares pediatricBlockAge -- the button stays
     // blocked below it (a hard refusal, same as an out-of-range weight),
     // but 12-16 is allowed through with a flagged, non-blocking advisory
@@ -4244,7 +4254,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (typeof document === 'undefined') return;
     var el = $('stepper');
     if (!el || el.classList.contains('hidden')) return;
-    var wtDone = state.patient.wt >= 25 && state.patient.wt <= 300;  // F8: widened from 35-200
+    var wtDone = weightInRange(state.patient.wt);
     var doseDone = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var runDone = !!state.fit && !state.stale;
     var exploreDone = !!(state.fit && state.fit.intervalScan);
@@ -4438,6 +4448,8 @@ table.data tr.assumed td { background: #fffbeb; }
     var ssDurEl = $('ss-dur');
     if (ssDurEl && !ssDurEl.value) ssDurEl.placeholder = 'e.g. ' + durToMinutes(spec.INFUSION_D);
     // measurement-field and target-field limits + tooltips come from the spec
+    var wtEl = $('pt-wt');
+    if (wtEl) { wtEl.min = weightRange().min; wtEl.max = weightRange().max; }
     var ov = $('obs-val');
     if (ov) { ov.min = spec.obsValMin || 0.01; ov.max = spec.obsValMax || 10000; }
     var tr = spec.targetRange || { min: 10, max: 500 };
@@ -4716,7 +4728,7 @@ table.data tr.assumed td { background: #fffbeb; }
       return;
     }
     var wt = state.patient.wt;
-    if (!(wt >= 25 && wt <= 300)) { alert('Enter the patient\'s body weight (25–300 kg), a covariate of the model.'); return; }
+    if (!weightInRange(wt)) { alert('Enter the patient\'s body weight (' + weightRange().min + '–' + weightRange().max + ' kg), a covariate of the model.'); return; }
     // F8 (independent audit, 2026-09-13): crovalimab-only. Below
     // pediatricBlockAge the model has no basis to extrapolate the
     // absorption-rate covariate and is refused outright, same as an
@@ -6115,7 +6127,7 @@ table.data tr.assumed td { background: #fffbeb; }
       '<p>Using this website, no data are remotely stored or processed. All calculations are performed ' +
       'locally on your device opening this website, to guarantee privacy and prevent data leaks.</p>';
     h += '<h3>Research use only</h3>' +
-      '<p><b>For research purposes only, not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in your browser; no data is transmitted or stored.</p>';
+      '<p><b>For research purposes only, not for routine clinical use.</b> This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover pregnancy or dialysis-dependent renal failure and, apart from eculizumab (weights from 3 kg), were not developed for paediatric patients. All computations run locally in your browser; no data is transmitted or stored.</p>';
     h += '<h3>Models</h3>';
     h += '<p class="src">For each model, assumptions and simplifications relative to its source are listed. Read them before clinical interpretation.</p>';
     h += '<h3>Trough targets</h3>' +
@@ -6577,7 +6589,7 @@ table.data tr.assumed td { background: #fffbeb; }
       spec.assumptions.forEach(function (a) { h += '<li>' + esc(a) + '</li>'; });
       h += '</ul>';
     }
-    h += '<p class="rp-note">For research purposes only, not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover paediatric patients, pregnancy, or dialysis-dependent renal failure. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
+    h += '<p class="rp-note">For research purposes only, not for routine clinical use. This tool is not a certified medical device and has not been clinically validated; validation against prospective data should be performed before routine use. Interpretation requires clinical judgment and local protocols; the models do not cover pregnancy or dialysis-dependent renal failure and, apart from eculizumab (weights from 3 kg), were not developed for paediatric patients. All computations run locally in the browser. Developed by Rob ter Heine, Radboudumc, Nijmegen (r.terheine@radboudumc.nl).</p>';
 
     return h;
   }
