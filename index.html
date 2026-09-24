@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-24 07:03 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-24 07:16 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -945,7 +945,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.38.0';
+  ECU.VERSION = '0.39.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -4219,7 +4219,15 @@ table.data tr.assumed td { background: #fffbeb; }
       (state.patient.age >= (M.drug().pediatricBlockAge || 1) && state.patient.age <= 100);
     var doseOk = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var reasons = [];
-    if (!wtOk) reasons.push('the patient\u2019s weight');
+    if (!wtOk) {
+      // A weight that WAS entered but is out of range for this drug must say
+      // so (v0.39.0): "enter the patient's weight" read as a bug to a user
+      // who had typed 8 kg into ravulizumab, whose minimum is 25 kg.
+      var wr = weightRange();
+      reasons.push(isFinite(state.patient.wt)
+        ? 'a weight between ' + wr.min + ' and ' + wr.max + ' kg for ' + M.drug().label
+        : 'the patient\u2019s weight');
+    }
     if (!ageOk) reasons.push('the patient\u2019s age');
     if (!doseOk) reasons.push(currentMode() === 'ss' ? 'a steady-state dose and interval' : 'at least one dose');
     var ok = reasons.length === 0 && !state.running;
