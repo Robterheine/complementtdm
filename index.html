@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-28 09:36 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-28 09:55 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -735,6 +735,19 @@ table.data tr.assumed td { background: #fffbeb; }
           <div style="align-self:end"><button class="primary" type="submit" id="doseAdd" style="width:100%" title="Add this dose to the schedule">Add dose</button></div>
         </div>
       </form>
+      <!-- Required in full-schedule mode: doses given before the first entered one
+           are otherwise read by the fit as slow elimination (falsely reassuring). -->
+      <div class="plan-block no-print" id="priorBlock">
+        <div class="lbl-help">
+          <span class="plan-title">Was the patient treated with this drug before the first dose entered above?</span>
+          <button type="button" class="info" data-help="prior" aria-label="Why does the app ask this?" aria-expanded="false" title="Doses missing from the start of the history make the patient look like a slow eliminator, which makes the forecast falsely reassuring.">ⓘ</button>
+        </div>
+        <div class="prior-opts" role="radiogroup" aria-label="Treated before the first entered dose">
+          <label class="check"><input type="radio" name="priorTx" value="no"> No, the first dose above is the first ever</label>
+          <label class="check"><input type="radio" name="priorTx" value="yes"> Yes, earlier doses are missing</label>
+        </div>
+        <div class="legend-note">If earlier doses are missing, enter them (then answer No), or use Steady state mode if the patient has been on the same regimen for months.</div>
+      </div>
       <!-- Optional clinician-entered regimen for AFTER the last entered
            dose. Drives the projected doses and the next-dose trough; left empty,
            the app continues with the interval and dose found in the history. -->
@@ -962,7 +975,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.40.0';
+  ECU.VERSION = '0.41.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1057,6 +1070,7 @@ table.data tr.assumed td { background: #fffbeb; }
       weightRange: { min: 3, max: 300 },   // kg; author's scope decision (see assumptions)
       obsValMin: 0.01,
       obsValMax: 10000,
+      obsTypicalMax: 1000,                 // above this: 'check the unit' confirmation, not a block
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: true,
@@ -1107,6 +1121,7 @@ table.data tr.assumed td { background: #fffbeb; }
       weightRange: { min: 25, max: 300 },
       obsValMin: 0.01,
       obsValMax: 10000,
+      obsTypicalMax: 3000,
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 70 kg).',
       diseaseCovariate: false,          // disease is not a covariate in this model
@@ -1211,6 +1226,7 @@ table.data tr.assumed td { background: #fffbeb; }
       weightRange: { min: 25, max: 300 },
       obsValMin: 0.01,
       obsValMax: 10000,
+      obsTypicalMax: 3000,
       targetRange: { min: 10, max: 500 },
       wtTooltip: 'Body weight in kg (covariate on clearance and volumes, allometric scaling to 75 kg in this model).',
       diseaseCovariate: false,
@@ -4027,7 +4043,7 @@ table.data tr.assumed td { background: #fffbeb; }
         ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString(),
           dur: (!M.drug().adminRoutes && $('ss-dur') && $('ss-dur').value.trim() !== '') ? parseFloat($('ss-dur').value) : null } : null,
         doses: state.doses, obs: state.obs, report: state.report,
-        plan: readPlanRaw()
+        plan: readPlanRaw(), priorTx: readPrior()
       }));
     } catch (e) { /* quota or serialisation failure must never break the app */ }
   }
@@ -4158,6 +4174,7 @@ table.data tr.assumed td { background: #fffbeb; }
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
     errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes. The forecast then leans more on typical patients.',
     recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.',
+    prior: 'Doses given before the first one entered here still leave drug in the blood. The model cannot see them, so it explains the higher level by assuming this patient clears the drug slowly, and then predicts levels that are too high for any longer interval. Answer No only if the first dose above really was the first ever dose. Otherwise enter the earlier doses, or use Steady state mode for a patient who has been on the same regimen for months.',
     plan: 'Optional. The dose and interval you intend to give after the last dose in the schedule. The chart\u2019s projected doses and the next-dose trough then follow this regimen. Left empty, the app continues with the interval and dose found in the entered history, which lags behind a recent interval change. This is your plan, not a suggestion from the app, and it does not change the fit to the measured levels.',
     infdur: 'Optional \u2014 leave blank to use the drug\u2019s own default. How long the IV infusion actually ran, in minutes (10\u2013360). Not applicable to SC doses, which have no infusion \u2014 the depot absorbs at its own rate regardless of injection time. Affects the shape of the concentration curve during and shortly after the infusion; a sample drawn while it was still running is flagged separately, since it may not reflect a representative concentration.'
   };
@@ -4250,6 +4267,9 @@ table.data tr.assumed td { background: #fffbeb; }
     var ageOk = !M.drug().covariateAge ||
       (state.patient.age >= (M.drug().pediatricBlockAge || 1) && state.patient.age <= 100);
     var doseOk = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
+    var prior = currentMode() === 'ss' ? 'no' : readPrior();
+    var tr = M.drug().targetRange || { min: 10, max: 500 };
+    var tgtOk = state.target.value >= tr.min && state.target.value <= tr.max;
     var reasons = [];
     if (!wtOk) {
       // A weight that WAS entered but is out of range for this drug must say
@@ -4262,6 +4282,9 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     if (!ageOk) reasons.push('the patient\u2019s age');
     if (!doseOk) reasons.push(currentMode() === 'ss' ? 'a steady-state dose and interval' : 'at least one dose');
+    if (!tgtOk) reasons.push('a trough target between ' + tr.min + ' and ' + tr.max + ' \u00b5g/mL');
+    if (prior == null) reasons.push('an answer to \u201ctreated before the first dose entered?\u201d');
+    if (prior === 'yes') reasons.push('the earlier doses (then answer No), or use Steady state mode,');
     var ok = reasons.length === 0 && !state.running;
     btn.disabled = !ok;
     if (hint) {
@@ -4612,6 +4635,21 @@ table.data tr.assumed td { background: #fffbeb; }
     updateRunReady();
   }
 
+  /* v0.41.0: "treated before the first entered dose?" (full-schedule mode).
+   * Missing early doses make the fit read the carried-over drug as slow
+   * elimination -- in testing, CL 0.065 instead of 0.161 L/day, and a q21d
+   * regimen reported as P(>75) = 100% while the true trough was 59. So the
+   * forecast only runs once this is answered "no". null = not answered. */
+  function readPrior() {
+    var el = document.querySelector('input[name="priorTx"]:checked');
+    return el ? el.value : null;
+  }
+  function setPrior(v) {
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="priorTx"]'), function (r) {
+      r.checked = (r.value === v);
+    });
+  }
+
   /* v0.40.0: optional planned regimen (full-schedule mode). readPlanRaw()
    * is what gets saved (both fields, possibly half-filled, so a restore gives
    * back exactly what was typed); readPlan() is what the forecast uses:
@@ -4807,7 +4845,17 @@ table.data tr.assumed td { background: #fffbeb; }
       alert(M.drug().label + ' requires an age between ' + minAge + ' and 100 years. The model was not developed for younger children.');
       return;
     }
-    if (!(state.target.value > 0)) { alert('Enter a valid trough target.'); return; }
+    var tRange = M.drug().targetRange || { min: 10, max: 500 };
+    if (!(state.target.value >= tRange.min && state.target.value <= tRange.max)) {
+      alert('Enter a trough target between ' + tRange.min + ' and ' + tRange.max + ' \u00b5g/mL for ' + M.drug().label + '.');
+      return;
+    }
+    if (currentMode() === 'full' && readPrior() !== 'no') {
+      alert(readPrior() === 'yes'
+        ? 'Earlier doses are missing. Enter them (then answer No), or use Steady state mode. Without them the forecast would be falsely reassuring.'
+        : 'Answer whether the patient was treated with this drug before the first dose entered.');
+      return;
+    }
 
     state.running = true;
     $('btnRun').disabled = true;
@@ -5037,6 +5085,9 @@ table.data tr.assumed td { background: #fffbeb; }
     rows[rows.length - 1].values = hoverObs;
 
     C.render(host, cfg);
+    if (fitUnreliable(fit)) {
+      host.insertAdjacentHTML('afterbegin', noteHtml('<b>Not reliable:</b> this fit did not converge. The curve is shown only to help find the input problem.', 'bad'));
+    }
   }
 
   // ------------------------- results panels -------------------------------
@@ -5211,9 +5262,6 @@ table.data tr.assumed td { background: #fffbeb; }
       ad.push(noteHtml(fit.nExcluded + ' sample' + (fit.nExcluded > 1 ? 's are' : ' is') +
         ' excluded from the fit; shown on the chart and in the report, but not used to estimate this patient\'s parameters.', 'info'));
     }
-    if (fit.map && fit.map.converged === false) {
-      ad.push(noteHtml('The parameter search did not fully converge. Treat the individual estimates and the bands with caution, and check the entered doses and sample times.', 'warn'));
-    }
     if (fit.map && fit.map.startGap > 1) {
       ad.push(noteHtml('The parameter search reached different solutions from different starting points (objective-function gap ' +
         fmtC(fit.map.startGap) + '). The samples may not identify this patient uniquely; an additional sample at a different time would help.', 'warn'));
@@ -5249,6 +5297,13 @@ table.data tr.assumed td { background: #fffbeb; }
       }
     }
     ab.innerHTML = ad.join('');
+    if (fitUnreliable(fit)) {
+      s.innerHTML = noteHtml('<b>Not reliable.</b> The parameter search did not converge, so this fit is not a usable estimate for this patient. ' +
+        'The trough predictions, probabilities, parameters and regimen explorer are withheld, and the report cannot be printed. ' +
+        'The curve is shown only to help find the problem: check the entered doses, amounts and sample times (and the unit of the levels), then run the forecast again.', 'bad') + s.innerHTML;
+      pb.innerHTML = '';
+      tb.innerHTML = noteHtml('Trough predictions withheld: the last forecast did not converge.', 'warn');
+    }
   }
 
   /* v0.10.0 — diagnostics rendering: GOF scatter (SVG via chart.js) inside the
@@ -5431,7 +5486,7 @@ table.data tr.assumed td { background: #fffbeb; }
       patient: state.patient, drug: state.drug, target: state.target, lloq: state.lloq, errMult: state.errMult,
       recency: state.recency,
       report: { preparedBy: state.report.preparedBy, advice: state.report.advice },
-      plan: readPlanRaw(),
+      plan: readPlanRaw(), priorTx: readPrior(),
       mode: currentMode(),
       /* Custom infusion times (2026-09-14): both the SS scalar and each
        * full-schedule dose's own .dur must survive export/import, or a
@@ -5486,6 +5541,7 @@ table.data tr.assumed td { background: #fffbeb; }
         });
         // v0.40.0: form first, then setMode() -- see applySession() for why.
         setPlanFields(data.plan);
+        setPrior(data.priorTx || null);
         syncInputs();
         var m = data.mode === 'ss' ? 'ss' : 'full';
         if (m === 'ss' && data.ss && isFinite(Date.parse(data.ss.anchor))) {
@@ -5537,6 +5593,9 @@ table.data tr.assumed td { background: #fffbeb; }
      * for the same reason). markStale() is not optional here: it is the
      * sole autosave point AND the stale banner, so omitting it would both
      * lose the setting and leave a stale forecast looking current. */
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="priorTx"]'), function (r) {
+      r.addEventListener('change', markStale);
+    });
     var recSel = $('pt-recency');
     if (recSel) recSel.addEventListener('change', function () {
       readPatient();
@@ -5553,11 +5612,13 @@ table.data tr.assumed td { background: #fffbeb; }
     $('tplClear').addEventListener('click', function () {
       if (!state.doses.length && !state.obs.length) return;
       // P4: non-blocking undo instead of a native confirm() dialog
-      var oldDoses = state.doses, oldObs = state.obs, oldFit = state.fit;
+      var oldDoses = state.doses, oldObs = state.obs, oldFit = state.fit, oldPrior = readPrior();
       state.doses = []; state.obs = []; state.fit = null;
+      setPrior(null);
       renderDoses(); renderObs(); showEmpty();
       showToast('Removed all doses and measurements.', function () {
         state.doses = oldDoses; state.obs = oldObs; state.fit = oldFit;
+        setPrior(oldPrior);
         renderDoses(); renderObs(); markStale();
       });
     });
@@ -5581,6 +5642,7 @@ table.data tr.assumed td { background: #fffbeb; }
       state.doses = []; state.obs = []; state.fit = null;
       state.drug = next;
       setPlanFields(null);   // a planned dose belongs to the previous drug
+      setPrior(null);        // "treated before" was about the previous drug
       // applyDrugUI() below re-prefills the target with the new drug's default
       // P4: reset the hidden disease selector so a stale value cannot leak
       // back when the user switches to a drug where disease is a covariate
@@ -5652,8 +5714,10 @@ table.data tr.assumed td { background: #fffbeb; }
         }
       }
       // Duplicate guard: two clicks on "Add dose" silently doubled the amount
-      var dup = state.doses.some(function (d) { return Math.abs(d.t - t) < 5 * 60000; });
-      if (dup && !confirm('A dose is already recorded within five minutes of that time.\n\nAdd a second one anyway?')) return;
+      // v0.41.0: 24 h, not 5 min -- a dose entered twice by two people an hour
+      // apart doubled the exposure in the fit without a question.
+      var dup = state.doses.some(function (d) { return Math.abs(d.t - t) < 24 * 3600000; });
+      if (dup && !confirm('A dose is already recorded within 24 hours of that time.\n\nIs this really a second, separate dose?')) return;
       var doseObj = { t: t, amt: amt, route: route };
       if (durMin != null) doseObj.dur = minutesToDur(durMin);
       state.doses.push(doseObj);
@@ -5668,6 +5732,9 @@ table.data tr.assumed td { background: #fffbeb; }
       var below = $('obs-lloq').checked;
       if (!isFinite(t)) { alert('Enter a valid date & time for the measurement.'); return; }
       if (!plausibleTime(t, 'measurement')) return;
+      // v0.41.0: a measured level cannot be from the future (a month typo was accepted silently)
+      if (t > Date.now() + 5 * 60000 &&
+        !confirm('That measurement is dated in the future (' + fmtDate(t) + '). A measured level cannot be from the future.\n\nIs the date correct?')) return;
       // A '< LLOQ' sample may be entered without a numeric value (only the flag
       // matters for the M3 likelihood); a quantified sample needs a value.
       if (!below && !(c >= 0)) { alert('Enter a valid concentration.'); return; }
@@ -5688,6 +5755,12 @@ table.data tr.assumed td { background: #fffbeb; }
       var maxC = (M.drug().obsValMax || 10000);
       if (!below && c < minC) { alert('That concentration (' + c + ' µg/mL) is below the plausible range for ' + M.drug().label + ' (min ' + minC + ' µg/mL). Check for a decimal or unit error. The app expects µg/mL (= mg/L).'); return; }
       if (!below && c > maxC) { alert('That concentration (' + c + ' µg/mL) is above the plausible range for ' + M.drug().label + ' (max ' + maxC + ' µg/mL). Check for a decimal or unit error. The app expects µg/mL (= mg/L).'); return; }
+      // v0.41.0: every sample, including the first (the fold check below needs
+      // earlier samples, so a first 7000 µg/mL went in unchallenged).
+      var typC = M.drug().obsTypicalMax;
+      if (!below && typC && c > typC &&
+        !confirm('That concentration (' + fmtC(c) + ' µg/mL) is unusually high for ' + M.drug().label + ' (above ' + typC +
+          ' µg/mL). Check the unit: the app expects µg/mL (= mg/L).\n\nAdd it anyway?')) return;
       // Non-blocking order-of-magnitude challenge against the other samples:
       // a 10x transposition lands inside the permitted range in this field.
       if (!below && isFinite(c) && state.obs.length) {
@@ -5860,6 +5933,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * blank, a custom target and the assay multiplier reset to defaults, and
      * markStale()'s autosave then overwrote the good saved copy. */
     setPlanFields(s.plan);
+    setPrior(s.priorTx || null);
     syncInputs();
     /* Steady-state mode's own fields were never restored here at all --
      * mirrors importJson()'s own restoration of the same ss:{dose,interval,
@@ -5935,9 +6009,16 @@ table.data tr.assumed td { background: #fffbeb; }
    * It displays consequences; the regimen choice stays with the clinician, and
    * no candidate is marked as recommended. Prints in the report when used,
    * clearly separated from the individualized default forecast above it. */
+  /* v0.41.0: an individualised fit whose parameter search did not converge is
+   * not a usable estimate. It used to be shown anyway, e.g. a trough of
+   * 925 [924-925] with P 100%, next to a small "treat with caution" note. */
+  function fitUnreliable(fit) {
+    return !!(fit && fit.hasObs && fit.map && fit.map.converged === false);
+  }
+
   function intervalExplorerAvailable() {
     return !!(state.fit && state.fit.draws && state.fit.draws.length && state.fit.rel &&
-              state.fit.rel.dosesRel && state.fit.rel.dosesRel.length);
+              state.fit.rel.dosesRel && state.fit.rel.dosesRel.length && !fitUnreliable(state.fit));
   }
 
   /* Card 4 is always visible (like cards 2-3, it shows its own "nothing yet"
@@ -5948,7 +6029,9 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!runBtn) return;
     if (!intervalExplorerAvailable()) {
       runBtn.disabled = true;
-      $('iv-out').innerHTML = '<div class="note">Run a forecast in card 3 first. This explorer reuses that fit’s own parameters.</div>';
+      $('iv-out').innerHTML = fitUnreliable(state.fit)
+        ? '<div class="note warn">Not available: the last forecast did not converge, so there are no reliable parameters to explore with.</div>'
+        : '<div class="note">Run a forecast in card 3 first. This explorer reuses that fit’s own parameters.</div>';
       return;
     }
     runBtn.disabled = false;
@@ -6133,7 +6216,8 @@ table.data tr.assumed td { background: #fffbeb; }
       '<li><b>Dosing schedule &amp; measured concentrations.</b> Choose <b>Full schedule</b> if ' +
       'you know the actual dates and doses this patient has received, or <b>Steady state</b> if ' +
       'they’re already on a stable maintenance regimen and you just want to enter the dose ' +
-      'and interval. Add any measured concentrations you have. The app works without them, but a ' +
+      'and interval. In Full schedule, also answer whether the patient had this drug before the first dose you entered; if they did, ' +
+      'enter those earlier doses too, because missing ones make the forecast look better than it is. Add any measured concentrations you have. The app works without them, but a ' +
       'measured level is what lets it personalize the forecast instead of just showing the ' +
       'population average.</li>' +
       '<li><b>Forecast.</b> Press <b>Run forecast</b>. The chart shows the predicted ' +
@@ -6376,6 +6460,10 @@ table.data tr.assumed td { background: #fffbeb; }
   function openReportDialog() {
     if (!state.fit) {
       alert('Run a forecast first. The report documents the result of the last run.');
+      return;
+    }
+    if (fitUnreliable(state.fit)) {
+      alert('The last forecast did not converge, so there is no reliable result to report. Check the entered doses, amounts and sample times, and run the forecast again.');
       return;
     }
     if (state.stale) {
