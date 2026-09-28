@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-24 07:16 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-28 09:36 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -237,6 +237,8 @@ table.data td.num, table.data th.num { text-align: right; }
 .progress-wrap .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
 .progress-wrap .msg { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+.plan-block { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.plan-block .plan-title { font-size: 12.5px; color: #334155; font-weight: 600; }
 .stale-banner {
   display: none; margin: 0 0 10px; padding: 7px 11px; border-radius: 8px;
   background: #fef3c7; color: #92400e; font-size: 12.5px; font-weight: 600;
@@ -733,6 +735,21 @@ table.data tr.assumed td { background: #fffbeb; }
           <div style="align-self:end"><button class="primary" type="submit" id="doseAdd" style="width:100%" title="Add this dose to the schedule">Add dose</button></div>
         </div>
       </form>
+      <!-- Optional clinician-entered regimen for AFTER the last entered
+           dose. Drives the projected doses and the next-dose trough; left empty,
+           the app continues with the interval and dose found in the history. -->
+      <div class="plan-block no-print">
+        <div class="lbl-help">
+          <span class="plan-title">Planned regimen after the last entered dose (optional)</span>
+          <button type="button" class="info" data-help="plan" aria-label="What does the planned regimen do?" aria-expanded="false" title="The dose and interval you intend to give from now on. Used for the projected doses and the next-dose trough.">ⓘ</button>
+        </div>
+        <div class="row3">
+          <div><label class="f" for="plan-dose">Dose (mg)</label><input type="number" id="plan-dose" min="50" max="4000" step="any" placeholder="e.g. 900" title="Planned dose per administration, in mg"></div>
+          <div><label class="f" for="plan-interval">Every (days)</label><input type="number" id="plan-interval" min="1" max="365" step="1" placeholder="e.g. 21" title="Planned dosing interval in days"></div>
+          <div></div>
+        </div>
+        <div class="legend-note">Leave both empty to continue with the interval and dose found in the entered history.</div>
+      </div>
     </div><!-- /fullDoseUI -->
 
     <div id="ssDoseUI" style="display:none">
@@ -945,7 +962,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.39.0';
+  ECU.VERSION = '0.40.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2568,10 +2585,10 @@ table.data tr.assumed td { background: #fffbeb; }
 
   /* Trough times: just before each dose from the 2nd onward + one virtual
    * next dose at lastDose + modal interval. */
-  function troughTimesOf(doses, interval) {
+  function troughTimesOf(doses, interval, planned) {
     var out = [];
     for (var i = 1; i < doses.length; i++) out.push(doses[i].t - 1e-6);
-    var vt = virtualTroughTime(doses, interval);
+    var vt = virtualTroughTime(doses, interval, planned);
     if (vt != null) out.push(vt);
     return out.sort(function (a, b) { return a - b; });
   }
@@ -2587,8 +2604,11 @@ table.data tr.assumed td { background: #fffbeb; }
    * dressed up as one. Author-reported: entering exactly one dose showed a
    * second, "assumed" one on both the chart and the trough table that had
    * nothing to do with anything the clinician had actually entered. */
-  function virtualTroughTime(doses, interval) {
-    if (doses.length < 2) return null;
+  /* v0.40.0: `planned` (truthy) means the clinician entered the future
+   * regimen themselves, so the interval is theirs, not derived from history,
+   * and a single entered dose is enough. */
+  function virtualTroughTime(doses, interval, planned) {
+    if (!doses.length || (doses.length < 2 && !planned)) return null;
     var iv = interval > 0 ? interval : (M.drug().ssIntervalDefault || 14);
     return doses[doses.length - 1].t + iv - 1e-6;
   }
@@ -2725,7 +2745,16 @@ table.data tr.assumed td { background: #fffbeb; }
     if (target != null && !isFinite(target)) {
       throw new Error('The trough target must be a number — correct or clear the field.');
     }
-    var interval = modalInterval(doses);
+    /* v0.40.0 (user feedback): an optional clinician-entered regimen for AFTER
+     * the last entered dose. When given, it replaces modalInterval()'s guess
+     * from the history (which reverts to the old interval right after an
+     * interval extension, and to the loading interval right after loading)
+     * for everything forward-looking: the chart continuation, the "next dose"
+     * trough row and the forecast horizon. It never reaches the likelihood:
+     * the fit itself uses the entered doses only, exactly as before. */
+    var planned = (input.planned && input.planned.amt > 0 && input.planned.interval > 0)
+      ? { amt: +input.planned.amt, interval: +input.planned.interval } : null;
+    var interval = planned ? planned.interval : modalInterval(doses);
     var lastDose = doses[doses.length - 1].t;
     var maxObs = obs.length ? Math.max.apply(null, obs.map(function (o) { return o.t; })) : 0;
     // Forecast window: last year of recorded history + 1.5 intervals ahead of the
@@ -2760,13 +2789,13 @@ table.data tr.assumed td { background: #fffbeb; }
     var contSpec = M.drug();
     var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount || 0);
     var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
-    var contAmt = doses[doses.length - 1].amt;
+    var contAmt = planned ? planned.amt : doses[doses.length - 1].amt;
     var chartProjectedDoses = [];
     /* v0.32.0: also requires at least two real doses, same reasoning as
      * virtualTroughTime() above -- with only one dose, `interval` is
      * necessarily the drug-default fallback, and drawing a "continuation"
      * from a single data point is a guess, not a continuation. */
-    if (!loadingPhase && doses.length >= 2) {
+    if (!loadingPhase && (doses.length >= 2 || planned)) {
       for (var pc = 1; pc <= 30; pc++) {
         var pt = lastDose + pc * interval;
         if (pt >= horizon) break;
@@ -2848,9 +2877,9 @@ table.data tr.assumed td { background: #fffbeb; }
     }
 
     // ---- posterior predictive on grid + troughs (within the display window) ----
-    var troughs = troughTimesOf(doses, interval).filter(function (t) { return t >= windowStart - 1e-9; });
+    var troughs = troughTimesOf(doses, interval, planned).filter(function (t) { return t >= windowStart - 1e-9; });
     // the one trough that assumes a next dose rather than reflecting an entered one
-    var virtualT = virtualTroughTime(doses, interval);
+    var virtualT = virtualTroughTime(doses, interval, planned);
     var outTimes = grid.concat(troughs);
     prog(0.8, 'Posterior predictive simulation…');
     // v0.8.1: the posterior band also carries the population absorption
@@ -3018,6 +3047,7 @@ table.data tr.assumed td { background: #fffbeb; }
       recencyTau: RECENCY_TAU_DAYS,
       draws: draws,
       interval: interval,
+      planned: planned,
       horizon: horizon,
       windowStart: windowStart,
       grid: grid,
@@ -3996,7 +4026,8 @@ table.data tr.assumed td { background: #fffbeb; }
         mode: currentMode(),
         ss: ss ? { dose: ss.D, interval: ss.I, anchor: new Date(ss.A).toISOString(),
           dur: (!M.drug().adminRoutes && $('ss-dur') && $('ss-dur').value.trim() !== '') ? parseFloat($('ss-dur').value) : null } : null,
-        doses: state.doses, obs: state.obs, report: state.report
+        doses: state.doses, obs: state.obs, report: state.report,
+        plan: readPlanRaw()
       }));
     } catch (e) { /* quota or serialisation failure must never break the app */ }
   }
@@ -4127,6 +4158,7 @@ table.data tr.assumed td { background: #fffbeb; }
     lloqbox: 'Tick when the lab reported the result as below the measurement limit. Leave the concentration field empty; the app uses the LLOQ value.',
     errmult: 'Leave at 1 unless your lab advises otherwise. Raise it only if your assay is noisier than the model assumes. The forecast then leans more on typical patients.',
     recency: 'Optional, off by default. A measurement describes the patient as they were on the day it was drawn, so a sample from a year ago says a little less about them today than one from last week. Switched on, older samples are given a larger measurement error and therefore pull the fit less \u2014 low, medium and high set how much larger it grows (up to 1.5, 2 or 3 times). The newest sample is never affected, and no sample is ever discarded. This is a setting for the assay error, so it works the same way for every drug.',
+    plan: 'Optional. The dose and interval you intend to give after the last dose in the schedule. The chart\u2019s projected doses and the next-dose trough then follow this regimen. Left empty, the app continues with the interval and dose found in the entered history, which lags behind a recent interval change. This is your plan, not a suggestion from the app, and it does not change the fit to the measured levels.',
     infdur: 'Optional \u2014 leave blank to use the drug\u2019s own default. How long the IV infusion actually ran, in minutes (10\u2013360). Not applicable to SC doses, which have no infusion \u2014 the depot absorbs at its own rate regardless of injection time. Affects the shape of the concentration curve during and shortly after the infusion; a sample drawn while it was still running is flagged separately, since it may not reflect a representative concentration.'
   };
 
@@ -4580,6 +4612,32 @@ table.data tr.assumed td { background: #fffbeb; }
     updateRunReady();
   }
 
+  /* v0.40.0: optional planned regimen (full-schedule mode). readPlanRaw()
+   * is what gets saved (both fields, possibly half-filled, so a restore gives
+   * back exactly what was typed); readPlan() is what the forecast uses:
+   * null = none entered, an object = valid, false = invalid (alerted). */
+  function readPlanRaw() {
+    var a = parseFloat($('plan-dose') ? $('plan-dose').value : '');
+    var i = parseFloat($('plan-interval') ? $('plan-interval').value : '');
+    return { amt: isFinite(a) ? a : null, interval: isFinite(i) ? i : null };
+  }
+  function readPlan(alertOn) {
+    var r = readPlanRaw();
+    if (r.amt == null && r.interval == null) return null;
+    var dl = M.drug().dose, bad = [];
+    if (!(r.amt >= dl.min && r.amt <= dl.max)) bad.push('dose (' + dl.min + '\u2013' + dl.max + ' mg)');
+    if (!(r.interval >= 1 && r.interval <= 365)) bad.push('interval (1\u2013365 days)');
+    if (bad.length) {
+      if (alertOn) alert('Planned regimen: enter a valid ' + bad.join(' and ') + ', or leave both fields empty.');
+      return false;
+    }
+    return { amt: r.amt, interval: r.interval };
+  }
+  function setPlanFields(p) {
+    if ($('plan-dose')) $('plan-dose').value = p && p.amt != null ? p.amt : '';
+    if ($('plan-interval')) $('plan-interval').value = p && p.interval != null ? p.interval : '';
+  }
+
   /* Parse the steady-state panel inputs. Returns {D, I, A} or null (with an
    * alert unless alertOn is false). */
   function readSS(alertOn) {
@@ -4728,6 +4786,8 @@ table.data tr.assumed td { background: #fffbeb; }
   async function runFit() {
     if (state.running) return;
     readPatient();
+    var plan = currentMode() === 'ss' ? null : readPlan(true);
+    if (plan === false) return;
     var rel = relContext();
     if (!rel) {
       if (!state.doses.length && currentMode() === 'full') {
@@ -4768,6 +4828,7 @@ table.data tr.assumed td { background: #fffbeb; }
         recency: state.recency || 'off',
         target: state.target.value,
         windowStart: rel.windowStart,
+        planned: currentMode() === 'ss' ? null : plan,
         seed: SEED
       };
       var fit = await B.runFit(input, {
@@ -4923,7 +4984,10 @@ table.data tr.assumed td { background: #fffbeb; }
       fit.chartProjectedDoses.forEach(function (d) {
         if (d.t >= xMin - 0.5 && d.t <= xMax) vlines.push({ x: d.t, color: 'rgba(180,83,9,.55)', dash: '2 3' });
       });
-      legend.push({ label: 'Projected dose (not entered)', color: 'rgba(180,83,9,.55)', swatch: 'line', dash: '2 3' });
+      legend.push({ label: fit.planned
+        ? 'Planned dose (entered regimen, ' + fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd)'
+        : 'Projected dose (not entered, assumed q' + fmtDays(fit.interval) + 'd from the entered history)',
+        color: 'rgba(180,83,9,.55)', swatch: 'line', dash: '2 3' });
     }
 
     var cfg = {
@@ -5055,8 +5119,11 @@ table.data tr.assumed td { background: #fffbeb; }
         thr += '<tr class="' + (future ? '' : 'past') + (tr.assumed ? ' assumed' : '') + '">' +
           '<td data-label="Day">' + fmtC(tr.t) + '</td>' +
           '<td data-label="Date">' + fmtDate(rel.t0ms + tr.t * DAY) +
-          (tr.assumed ? ' <span class="tag-assumed" title="No dose was entered at this time. The app assumed the next administration falls one interval (q' +
-            fmtDays(fit.interval) + ' d) after the last entered dose.">assumed dose</span>' : '') + '</td>' +
+          (tr.assumed ? (fit.planned
+            ? ' <span class="tag-assumed" title="Next dose of the planned regimen you entered (' + fmtC(fit.planned.amt) + ' mg q' +
+              fmtDays(fit.planned.interval) + 'd), not yet given.">planned dose</span>'
+            : ' <span class="tag-assumed" title="No dose was entered at this time. The app assumed the next administration falls one interval (q' +
+              fmtDays(fit.interval) + ' d) after the last entered dose.">assumed dose</span>') : '') + '</td>' +
           '<td class="num" data-label="Median trough">' + fmtC(tr.med) + ' <span class="ci-range">[' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</span></td>' +
           '<td class="num" data-label="P(&gt; target)">' + ptaBadge(tr.pTarget, tr.pCI) + '</td>' +
           '</tr>';
@@ -5070,8 +5137,11 @@ table.data tr.assumed td { background: #fffbeb; }
         thr += '<div class="legend-note">' + esc(fit.disease) + ': between-occasion variability is folded into the prior, so the interval above for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty.</div>';
       }
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
-        thr += '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
-          ' d) after the last entered dose. Enter the actual planned doses, or use Steady state mode, to model a different interval.</div>';
+        thr += fit.planned
+          ? '<div class="legend-note">The row marked <b>planned dose</b> is the next administration of the planned regimen you entered (' +
+            fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd), not yet given.</div>'
+          : '<div class="legend-note">The row marked <b>assumed dose</b> projects one interval (q' + fmtDays(fit.interval) +
+            ' d, taken from the entered history) after the last entered dose. To model a different regimen, fill in the planned regimen below the dose form.</div>';
       }
     } else {
       thr = '<div class="note">Add planned doses to see predicted troughs.</div>';
@@ -5361,6 +5431,7 @@ table.data tr.assumed td { background: #fffbeb; }
       patient: state.patient, drug: state.drug, target: state.target, lloq: state.lloq, errMult: state.errMult,
       recency: state.recency,
       report: { preparedBy: state.report.preparedBy, advice: state.report.advice },
+      plan: readPlanRaw(),
       mode: currentMode(),
       /* Custom infusion times (2026-09-14): both the SS scalar and each
        * full-schedule dose's own .dur must survive export/import, or a
@@ -5407,7 +5478,15 @@ table.data tr.assumed td { background: #fffbeb; }
           if (d.dur != null && isFinite(d.dur)) out.dur = d.dur;
           return out;
         });
-        state.obs = (data.obs || []).map(function (o) { return { t: Date.parse(o.t), c: o.lloq && o.c == null ? null : parseFloat(o.c), lloq: !!o.lloq }; });
+        /* v0.40.0: exclude + note are exported, so they must be imported too --
+         * dropping them put an excluded sample silently back into the fit. */
+        state.obs = (data.obs || []).map(function (o) {
+          return { t: Date.parse(o.t), c: o.lloq && o.c == null ? null : parseFloat(o.c), lloq: !!o.lloq,
+            exclude: !!o.exclude, note: typeof o.note === 'string' ? o.note : '' };
+        });
+        // v0.40.0: form first, then setMode() -- see applySession() for why.
+        setPlanFields(data.plan);
+        syncInputs();
         var m = data.mode === 'ss' ? 'ss' : 'full';
         if (m === 'ss' && data.ss && isFinite(Date.parse(data.ss.anchor))) {
           $('ss-dose').value = data.ss.dose != null ? data.ss.dose : 900;
@@ -5419,7 +5498,6 @@ table.data tr.assumed td { background: #fffbeb; }
           setMode('full');
         }
         state.fit = null;
-        syncInputs();
         markStale();
       } catch (e) {
         alert('Could not import session: ' + e.message);
@@ -5445,7 +5523,7 @@ table.data tr.assumed td { background: #fffbeb; }
 
   // ------------------------------ init ------------------------------------
   function wire() {
-    var inputs = ['pt-code', 'pt-wt', 'pt-age', 'pt-disease', 'pt-target', 'pt-lloq', 'pt-errmult'];
+    var inputs = ['pt-code', 'pt-wt', 'pt-age', 'pt-disease', 'pt-target', 'pt-lloq', 'pt-errmult', 'plan-dose', 'plan-interval'];
     inputs.forEach(function (id) {
       var el = $(id);
       if (el) el.addEventListener('input', function () {
@@ -5502,6 +5580,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       state.doses = []; state.obs = []; state.fit = null;
       state.drug = next;
+      setPlanFields(null);   // a planned dose belongs to the previous drug
       // applyDrugUI() below re-prefills the target with the new drug's default
       // P4: reset the hidden disease selector so a stale value cannot leak
       // back when the user switches to a drug where disease is a covariate
@@ -5774,6 +5853,14 @@ table.data tr.assumed td { background: #fffbeb; }
     applyDrugUI();
     state.target = s.target || { value: null };
     if (!(state.target.value > 0)) state.target.value = null;
+    /* v0.40.0: the form must hold the restored values BEFORE setMode() below.
+     * setMode() -> markStale() -> updateRunReady() -> readPatient() reads the
+     * form back into state; with syncInputs() after it (as until now) that
+     * read the still-empty form over the restored session -- weight and LLOQ
+     * blank, a custom target and the assay multiplier reset to defaults, and
+     * markStale()'s autosave then overwrote the good saved copy. */
+    setPlanFields(s.plan);
+    syncInputs();
     /* Steady-state mode's own fields were never restored here at all --
      * mirrors importJson()'s own restoration of the same ss:{dose,interval,
      * anchor,dur} shape exactly, including the same validity guard
@@ -5792,7 +5879,6 @@ table.data tr.assumed td { background: #fffbeb; }
     } else {
       setMode('full');
     }
-    syncInputs();
     renderDoses();
     renderObs();
     showEmpty();
@@ -5867,7 +5953,7 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     runBtn.disabled = false;
     var rel = state.fit.rel;
-    var lastAmt = rel.dosesRel[rel.dosesRel.length - 1].amt;
+    var lastAmt = state.fit.planned ? state.fit.planned.amt : rel.dosesRel[rel.dosesRel.length - 1].amt;
     var amtEl = $('iv-amt'), ivEl = $('iv-interval');
     if (amtEl) amtEl.value = lastAmt;
     if (ivEl) ivEl.value = fmtDays(state.fit.interval);
@@ -6427,6 +6513,8 @@ table.data tr.assumed td { background: #fffbeb; }
     if (rel.ssMode) {
       h += '<p class="rp-note">Steady state on a fixed regimen; day 0 = the latest dose. Previous cycles were simulated back to steady state.</p>';
     } else {
+      if (fit.planned) h += '<p class="rp-note">Planned regimen after the last entered dose (entered by the user): ' +
+        fmtC(fit.planned.amt) + ' mg every ' + fmtDays(fit.planned.interval) + ' days.</p>';
       var showDurR = st.doses.some(function (d) { return d.dur != null; });
       h += '<table class="rp-table"><thead><tr><th>Date &amp; time</th><th class="num">Dose (mg)</th>' +
         (spec.adminRoutes ? '<th>Route</th>' : '') +
@@ -6541,7 +6629,8 @@ table.data tr.assumed td { background: #fffbeb; }
         /* The reader of the record must be able to tell which line is the
          * decision-relevant one, and which assumes a dose nobody has scheduled. */
         var status = tr.assumed
-          ? '<b>assumed next dose</b> (q' + fmtDays(fit.interval) + 'd)'
+          ? (fit.planned ? '<b>planned next dose</b> (' + fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd)'
+            : '<b>assumed next dose</b> (q' + fmtDays(fit.interval) + 'd)')
           : (tr.t <= nowRelR ? 'past' : 'upcoming');
         h += '<tr' + (tr.assumed ? ' class="rp-assumed"' : '') + '><td>' + fmtC(tr.t) + '</td><td>' + fmtDate(rel.t0ms + tr.t * DAY) + '</td>' +
           '<td>' + status + '</td>' +
@@ -6555,8 +6644,11 @@ table.data tr.assumed td { background: #fffbeb; }
         h += '<div class="rp-legend">' + esc(fit.disease) + ': between-occasion variability is folded into the prior, so the interval above for the next dose is somewhat narrower than the full occasion-to-occasion uncertainty.</div>';
       }
       if (fit.troughs.some(function (tr) { return tr.assumed; })) {
-        h += '<div class="rp-legend">“Assumed next dose” is not a scheduled administration: no dose was entered at that time, so the app projected one interval (q' +
-          fmtDays(fit.interval) + ' d) after the last entered dose.</div>';
+        h += fit.planned
+          ? '<div class="rp-legend">“Planned next dose” is the next administration of the regimen entered by the user (' +
+            fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd); it has not been given.</div>'
+          : '<div class="rp-legend">“Assumed next dose” is not a scheduled administration: no dose was entered at that time, so the app projected one interval (q' +
+            fmtDays(fit.interval) + ' d) after the last entered dose.</div>';
       }
     }
 
