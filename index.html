@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-30 17:46 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-30 18:08 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -976,7 +976,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.42.0';
+  ECU.VERSION = '0.43.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1420,7 +1420,23 @@ table.data tr.assumed td { background: #fffbeb; }
     return p.cl + p.vmax / (p.km + c);
   }
 
-  /* Approximate effective half-life [days] at steady-state concentration c */
+  /* Terminal (slow-phase) half-life [days] of the two-compartment
+   * disposition: λz = (s − √(s² − 4·k10·k21))/2 with s = k10 + k12 + k21 and
+   * k10 = CL_eff/V1. The SC depot (crovalimab) only feeds the central
+   * compartment and does not change it. With Michaelis–Menten elimination
+   * (eculizumab) CL_eff depends on concentration, so the value holds at `c`.
+   * v0.43.0, replacing effHalfLife() in the UI (review B1). */
+  function terminalHalfLife(p, c) {
+    var k10 = effClearance(p, c > 0 ? c : 0) / p.v1;
+    var k12 = p.q / p.v1, k21 = p.q / p.v2;
+    var s = k10 + k12 + k21;
+    var lz = (s - Math.sqrt(Math.max(0, s * s - 4 * k10 * k21))) / 2;
+    return lz > 0 ? Math.LN2 / lz : NaN;
+  }
+
+  /* Approximate effective half-life [days] at steady-state concentration c.
+   * One-compartment (ignores the peripheral compartment); no longer shown in
+   * the UI since v0.43.0, kept for its existing tests. */
   function effHalfLife(p, c) {
     return Math.LN2 * p.v1 / effClearance(p, c);
   }
@@ -1648,6 +1664,7 @@ table.data tr.assumed td { background: #fffbeb; }
     indivParamsVec: indivParamsVec,
     effClearance: effClearance,
     effHalfLife: effHalfLife,
+    terminalHalfLife: terminalHalfLife,
     simulate: simulate
   };
 
@@ -4110,6 +4127,40 @@ table.data tr.assumed td { background: #fffbeb; }
     }
     return 'ESS ≈ ' + Math.max(1, Math.round(fit.essMin != null ? fit.essMin : (fit.essCL || 0)));
   }
+  /* v0.43.0 (review B1/B2, author's decision): the TERMINAL half-life of the
+   * two-compartment model, as a median and 5–95% range across posterior
+   * draws. For eculizumab (saturable elimination) it holds at a stated
+   * concentration: the predicted true trough before the next dose. */
+  function halfLifeInfo(fit) {
+    if (!fit || !fit.draws || !fit.draws.length) return null;
+    var drug = M.drug();
+    var nonlinear = drug.THETA.VMAX > 0;
+    var next = (fit.troughs || []).filter(function (tr) { return tr.assumed; })[0] ||
+      (fit.troughs && fit.troughs.length ? fit.troughs[fit.troughs.length - 1] : null);
+    var conc = next && isFinite(next.med) ? next.med : NaN;
+    if (nonlinear && !(conc > 0)) return null;
+    var n = fit.draws.length, step = Math.max(1, Math.floor(n / 400)), vals = [];
+    for (var i = 0; i < n; i += step) {
+      var p = M.indivParams(fit.wt, fit.disease, fit.draws[i], drug.id, fit.age);
+      var th = M.terminalHalfLife(p, conc);
+      if (isFinite(th)) vals.push(th);
+    }
+    if (!vals.length) return null;
+    vals.sort(function (a, b) { return a - b; });
+    var q = function (f) { return vals[Math.min(vals.length - 1, Math.max(0, Math.round(f * (vals.length - 1))))]; };
+    var pTyp = M.indivParams(fit.wt, fit.disease, fit.map ? fit.map.etaVec || fit.map.eta || [0, 0] : [0, 0], drug.id, fit.age);
+    return {
+      med: q(0.5), p5: q(0.05), p95: q(0.95), nonlinear: nonlinear,
+      conc: conc, concText: isFinite(conc) ? (conc >= 10 ? String(Math.round(conc)) : conc.toFixed(1)) : '',
+      vmax: pTyp.vmax, km: pTyp.km,
+      clTotal: nonlinear ? pTyp.cl + pTyp.vmax / (pTyp.km + conc) : pTyp.cl
+    };
+  }
+  function halfLifeText(hl) {
+    return hl.med.toFixed(1) + ' days [5–95% ' + hl.p5.toFixed(1) + '–' + hl.p95.toFixed(1) + ']' +
+      (hl.nonlinear ? ' at a trough of ' + hl.concText + ' µg/mL' : '');
+  }
+
   /* Review B4: residual error as SD/CV with units; NONMEM variances kept. */
   function residualText(spec) {
     var parts = [], vars = [];
@@ -5162,14 +5213,17 @@ table.data tr.assumed td { background: #fffbeb; }
     var html = '<div class="result-meta">' + meta + '</div>';
     if (fit.hasObs) {
       var cl = fit.clQ, v1 = fit.v1Q;
-      var troughMed = fit.troughs.length ? fit.troughs[fit.troughs.length - 1].med : NaN;
-      var thalf = isFinite(troughMed) ? M.effHalfLife(pm.params, troughMed) : NaN;
+      var hl = halfLifeInfo(fit);
       html += '<div class="kv">' +
         '<span class="k">Clearance CL (L/day)</span><span class="v">' + fmtC(cl.med) +
         ' <span class="ci-range">[' + fmtC(cl.p5) + '–' + fmtC(cl.p95) + ']</span></span>' +
         '<span class="k">Central volume V1 (L)</span><span class="v">' + fmtC(v1.med) +
         ' <span class="ci-range">[' + fmtC(v1.p5) + '–' + fmtC(v1.p95) + ']</span></span>' +
-        '<span class="k">Eff. t½ at trough (approx.)</span><span class="v">' + (isFinite(thalf) ? thalf.toFixed(1) + ' d' : '–') + '</span>' +
+        '<span class="k">Terminal t½ (days)' + (hl && hl.nonlinear ? ' at ' + hl.concText + ' µg/mL' : '') + '</span><span class="v">' +
+        (hl ? hl.med.toFixed(1) + ' <span class="ci-range">[' + hl.p5.toFixed(1) + '–' + hl.p95.toFixed(1) + ']</span>' : '–') + '</span>' +
+        (hl && hl.nonlinear
+          ? '<span class="k">Saturable elimination (fixed)</span><span class="v">Vmax ' + fmtC(hl.vmax) + ' mg/day, Km ' + fmtC(hl.km) + ' µg/mL</span>'
+          : '') +
         '<span class="k">' + etaLabel(pm) + ' (MAP)</span><span class="v">' + fmtEtaVec(pm) + '</span>' +
         '</div>';
       html += infoBars(fit);
@@ -5186,8 +5240,14 @@ table.data tr.assumed td { background: #fffbeb; }
       html += '<details class="help"><summary>How this was calculated</summary><ul>' +
         '<li><b>Best-fit (MAP) parameters:</b> clearance ' + fmtC(cl.med) + ' L/day [5–95% ' + fmtC(cl.p5) + '–' + fmtC(cl.p95) +
         '], central volume ' + fmtC(v1.med) + ' L [' + fmtC(v1.p5) + '–' + fmtC(v1.p95) + '].</li>' +
-        '<li><b>Half-life near the trough:</b> ≈ ' + (isFinite(thalf) ? thalf.toFixed(1) + ' days' : '–') +
-        '. It shortens at higher concentrations (saturable clearance).</li>' +
+        '<li><b>Terminal half-life:</b> ' + (hl ? halfLifeText(hl) : '–') + '. This is the slow phase of the two-compartment model, ' +
+        'the rate at which levels fall once distribution is complete' +
+        (hl && hl.nonlinear
+          ? '. Eculizumab also has saturable (target-mediated) elimination with fixed model values Vmax ' + fmtC(hl.vmax) +
+            ' mg/day (scaled to this weight) and Km ' + fmtC(hl.km) + ' µg/mL, which speeds up elimination at low concentrations; ' +
+            'the figure therefore holds at the predicted trough of ' + hl.concText + ' µg/mL, where total clearance is ' + fmtC(hl.clTotal) +
+            ' L/day, and is shorter below it. The clearance shown above is the linear part only'
+          : '') + '.</li>' +
         '<li><b>Individual shifts from the typical patient (η):</b> ' + fmtEtaVec(pm) + '.</li>' +
         '<li><b>Sampling precision:</b> ' + precisionWord(fit) + ' (' + fit.nDraws + ' posterior draws, ' +
         essText(fit) + ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ').</li>' +
@@ -6704,6 +6764,11 @@ table.data tr.assumed td { background: #fffbeb; }
       'Population (prior) forecast, no individualization') + '</td></tr>';
     if (fit.hasObs) {
       h += '<tr><td>Clearance (individual)</td><td>' + fmtC(fit.clQ.med) + ' L/day [5–95% ' + fmtC(fit.clQ.p5) + '–' + fmtC(fit.clQ.p95) + ']</td></tr>';
+      var hlR = halfLifeInfo(fit);
+      if (hlR) h += '<tr><td>Terminal half-life</td><td>' + halfLifeText(hlR) + '</td></tr>';
+      if (hlR && hlR.nonlinear) h += '<tr><td>Saturable elimination</td><td>Vmax ' + fmtC(hlR.vmax) + ' mg/day (scaled to this weight), Km ' +
+        fmtC(hlR.km) + ' µg/mL: fixed model values, not estimated. Total clearance at the predicted trough of ' + hlR.concText +
+        ' µg/mL is ' + fmtC(hlR.clTotal) + ' L/day (the clearance above is the linear part only).</td></tr>';
       h += '<tr><td>Central volume (individual)</td><td>' + fmtC(fit.v1Q.med) + ' L [5–95% ' + fmtC(fit.v1Q.p5) + '–' + fmtC(fit.v1Q.p95) + ']</td></tr>';
       h += '<tr><td>Random effects ' + etaLabel(fit.map) + '</td><td>' + fmtEtaVec(fit.map) + '</td></tr>';
       if (fit.etaInformation && fit.map.etaNames) {
@@ -6873,7 +6938,8 @@ table.data tr.assumed td { background: #fffbeb; }
    * the UI itself. */
   ECU.reportHtml = reportHtml;
   ECU.findingsLines = findingsLines;
-  ECU.ptaBadge = ptaBadge;   // testability (F3/F11, v0.23.0): pure string builder, no DOM
+  ECU.ptaBadge = ptaBadge;
+  ECU.halfLifeInfo = halfLifeInfo;   // testability (v0.43.0)   // testability (F3/F11, v0.23.0): pure string builder, no DOM
   // testability (custom infusion times, 2026-09-14): pure unit-conversion/
   // formatting functions, no DOM
   ECU.durToMinutes = durToMinutes;
