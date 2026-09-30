@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-28 09:55 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-30 17:46 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -237,6 +237,7 @@ table.data td.num, table.data th.num { text-align: right; }
 .progress-wrap .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
 .progress-wrap .msg { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+.unit { text-transform: none; }   /* uppercase headers turned µg/mL into ΜG/ML */
 .plan-block { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .plan-block .plan-title { font-size: 12.5px; color: #334155; font-weight: 600; }
 .stale-banner {
@@ -828,7 +829,7 @@ table.data tr.assumed td { background: #fffbeb; }
       </div>
       <div id="chart"></div>
     </div>
-    <div class="legend-note">Individual = incorporates this patient's own measured levels · Population = model only, no patient data yet · red points = measurements · dashed amber line = target · faint dotted amber = a projected future dose, not yet given.</div>
+    <div class="legend-note" id="chartCaption"></div>
 
     <div class="progress-wrap" id="progress">
       <div class="bar"><div id="progressBar"></div></div>
@@ -975,7 +976,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.41.0';
+  ECU.VERSION = '0.42.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3595,7 +3596,8 @@ table.data tr.assumed td { background: #fffbeb; }
       var y = Y(h.y);
       if (y < m.t || y > m.t + ih) return;
       s.push('<line x1="' + m.l + '" y1="' + y + '" x2="' + (m.l + iw) + '" y2="' + y + '" stroke="' + h.color + '" stroke-width="' + (h.width || 1.6) + '" stroke-dasharray="' + (h.dash || '7 5') + '"/>');
-      s.push('<text x="' + (m.l + iw - 6) + '" y="' + (y - 5) + '" text-anchor="end" font-size="' + fs.hline + '" fill="' + h.color + '" font-weight="600">' + esc(h.label || '') + '</text>');
+      // white halo so the label stays readable over troughs and points (review C2)
+      s.push('<text x="' + (m.l + iw - 6) + '" y="' + (y - 5) + '" text-anchor="end" font-size="' + fs.hline + '" fill="' + h.color + '" font-weight="600" stroke="#fff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">' + esc(h.label || '') + '</text>');
     });
 
     // series
@@ -3716,7 +3718,8 @@ table.data tr.assumed td { background: #fffbeb; }
         var t = hv.times[idx];
         guide.setAttribute('x1', X(t)); guide.setAttribute('x2', X(t));
         guide.setAttribute('opacity', 0.55);
-        var html = '<b>Day ' + (Math.round(t * 10) / 10) + '</b><br>';
+        var html = '<b>Day ' + (Math.round(t * 10) / 10) + '</b>' +
+          (cfg.hoverDate ? ' · ' + esc(cfg.hoverDate(t)) : '') + '<br>';
         hv.rows.forEach(function (r) {
           var v = r.values[idx];
           if (isFinite(v)) html += '<span style="color:' + r.color + '">&#9632;</span> ' + esc(r.label) + ': <b>' + fmt(v) + '</b><br>';
@@ -4078,7 +4081,42 @@ table.data tr.assumed td { background: #fffbeb; }
       { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   function fmtC(v) { return isFinite(v) ? (v >= 100 ? Math.round(v).toString() : (v >= 10 ? v.toFixed(1) : v.toFixed(2))) : '–'; }
-  function fmtPct(p) { return isFinite(p) ? Math.round(p * 100) + '%' : '–'; }
+  /* v0.42.0 (review A2): a probability that rounds to 0 or 100 is printed as
+   * "< 1%" / "> 99%" -- a finite chain cannot show certainty, and "100%" next
+   * to a zero-width "(100–100%)" interval read as infinite precision. */
+  function fmtPct(p) {
+    if (!isFinite(p)) return '–';
+    var r = Math.round(p * 100);
+    return r >= 100 ? '> 99%' : r <= 0 ? '< 1%' : r + '%';
+  }
+  // Monte-Carlo interval text, omitted when it rounds to zero width (A2).
+  function fmtPci(ci) {
+    if (!(ci && isFinite(ci[0]) && isFinite(ci[1]))) return '';
+    var lo = Math.round(ci[0] * 100), hi = Math.round(ci[1] * 100);
+    return lo === hi ? '' : lo + '–' + hi + '%';
+  }
+  /* Troughs are computed a hair (1e-6 day) before the dose, so a 09:00 dose
+   * printed its trough at 08:59 (review C6). Shown at the dose minute. */
+  function troughDate(rel, t) {
+    return fmtDate(rel.t0ms + Math.round(t * 1440) / 1440 * DAY);
+  }
+  /* Review A3: print the WORST-informed parameter's ESS, not clearance's. */
+  function essText(fit) {
+    var all = fit.essAll, names = fit.map && fit.map.etaNames;
+    if (all && all.length && names && names.length === all.length) {
+      var k = 0;
+      for (var i = 1; i < all.length; i++) if (all[i] < all[k]) k = i;
+      return 'lowest ESS ≈ ' + Math.max(1, Math.round(all[k])) + ' (' + names[k] + ')';
+    }
+    return 'ESS ≈ ' + Math.max(1, Math.round(fit.essMin != null ? fit.essMin : (fit.essCL || 0)));
+  }
+  /* Review B4: residual error as SD/CV with units; NONMEM variances kept. */
+  function residualText(spec) {
+    var parts = [], vars = [];
+    if (spec.SIGMA.ADD > 0) { parts.push('additive SD ' + Math.sqrt(spec.SIGMA.ADD).toFixed(1) + ' µg/mL'); vars.push(spec.SIGMA.ADD); }
+    parts.push('proportional CV ' + (Math.sqrt(spec.SIGMA.PROP) * 100).toFixed(1) + '%'); vars.push(spec.SIGMA.PROP);
+    return parts.join(' + ') + ' (NONMEM variances ' + vars.join(' and ') + ')';
+  }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   /* A mistyped year in a datetime-local field is one arrow-press away and used
@@ -4141,13 +4179,11 @@ table.data tr.assumed td { background: #fffbeb; }
    * now always show the real percent; none of them recommend anything. */
   function ptaBadge(p, ci) {
     if (!isFinite(p)) return '<span class="badge info" title="Probability not available">–</span>';
-    var ciTxt = (ci && isFinite(ci[0]) && isFinite(ci[1]))
-      ? ' (Monte-Carlo 95% interval ' + Math.round(ci[0] * 100) + '–' + Math.round(ci[1] * 100) + '%)'
-      : '';
-    var pct = Math.round(p * 100);
-    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ' + pct + '%, the trough target is likely to be maintained' + ciTxt + '">P ' + pct + '%</span>';
-    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + pct + '%, intermediate attainment against your chosen target' + ciTxt + '">P ' + pct + '%</span>';
-    return '<span class="badge bad" data-help="pta" title="Probability ' + pct + '%, the target is unlikely to be attained' + ciTxt + '">P ' + pct + '%</span>';
+    var ciTxt = fmtPci(ci) ? ' (Monte-Carlo 95% interval ' + fmtPci(ci) + ')' : '';
+    var pct = esc(fmtPct(p));
+    if (p >= 0.9) return '<span class="badge ok" data-help="pta" title="Probability ' + pct + ', the trough target is likely to be maintained' + ciTxt + '">P ' + pct + '</span>';
+    if (p >= 0.5) return '<span class="badge warn" data-help="pta" title="Probability ' + pct + ', intermediate attainment against your chosen target' + ciTxt + '">P ' + pct + '</span>';
+    return '<span class="badge bad" data-help="pta" title="Probability ' + pct + ', the target is unlikely to be attained' + ciTxt + '">P ' + pct + '</span>';
   }
   /* Dosing intervals are whole days in practice; fmtC would render 14 as
    * "14.0", which reads like a measured quantity rather than a schedule. */
@@ -5032,9 +5068,9 @@ table.data tr.assumed td { background: #fffbeb; }
       fit.chartProjectedDoses.forEach(function (d) {
         if (d.t >= xMin - 0.5 && d.t <= xMax) vlines.push({ x: d.t, color: 'rgba(180,83,9,.55)', dash: '2 3' });
       });
-      legend.push({ label: fit.planned
-        ? 'Planned dose (entered regimen, ' + fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd)'
-        : 'Projected dose (not entered, assumed q' + fmtDays(fit.interval) + 'd from the entered history)',
+      // Short labels: the 68-character v0.40.0 label ran off a phone-width
+      // chart (review C3). The regimen detail is in the caption below.
+      legend.push({ label: fit.planned ? 'Planned dose' : 'Projected dose (not entered)',
         color: 'rgba(180,83,9,.55)', swatch: 'line', dash: '2 3' });
     }
 
@@ -5051,6 +5087,7 @@ table.data tr.assumed td { background: #fffbeb; }
       points: obsPts,
       legend: legend,
       hover: { times: grid, rows: rows },
+      hoverDate: function (t) { return fmtDate(rel.t0ms + t * DAY); },
       /* Text alternative built from the actual forecast, so a screen-reader
        * user gets the same headline numbers a sighted user reads off the plot. */
       title: M.drug().label + ' concentration–time forecast',
@@ -5085,9 +5122,27 @@ table.data tr.assumed td { background: #fffbeb; }
     rows[rows.length - 1].values = hoverObs;
 
     C.render(host, cfg);
+    if (!hostOverride && $('chartCaption')) $('chartCaption').textContent = chartCaption(fit);
     if (fitUnreliable(fit)) {
       host.insertAdjacentHTML('afterbegin', noteHtml('<b>Not reliable:</b> this fit did not converge. The curve is shown only to help find the input problem.', 'bad'));
     }
+  }
+
+  /* Review C5: the caption describes what this chart actually draws. It used
+   * to be fixed text explaining a population band that is not drawn once an
+   * individual fit exists, and a projection that is not always there. */
+  function chartCaption(fit) {
+    var parts = [fit.hasObs
+      ? 'Shaded band = 5–95% range of the individual prediction, which uses this patient\u2019s measured levels'
+      : 'Shaded band = 5–95% range of the population prediction (model only, no measured levels yet)'];
+    if (fit.hasObs) parts.push('red points = measurements');
+    parts.push('dashed amber line = target');
+    if (fit.chartProjectedDoses && fit.chartProjectedDoses.length) {
+      parts.push(fit.planned
+        ? 'faint dotted amber = planned doses (entered regimen: ' + fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd), not yet given'
+        : 'faint dotted amber = projected doses, not entered (assumed q' + fmtDays(fit.interval) + 'd from the entered history; fill in the planned regimen to change this)');
+    }
+    return parts.join(' · ') + '.';
   }
 
   // ------------------------- results panels -------------------------------
@@ -5134,8 +5189,8 @@ table.data tr.assumed td { background: #fffbeb; }
         '<li><b>Half-life near the trough:</b> ≈ ' + (isFinite(thalf) ? thalf.toFixed(1) + ' days' : '–') +
         '. It shortens at higher concentrations (saturable clearance).</li>' +
         '<li><b>Individual shifts from the typical patient (η):</b> ' + fmtEtaVec(pm) + '.</li>' +
-        '<li><b>Sampling precision:</b> ' + precisionWord(fit) + ' (' + fit.nDraws + ' posterior draws, ESS ≈ ' +
-        Math.max(1, Math.round(fit.essCL || 0)) + ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ').</li>' +
+        '<li><b>Sampling precision:</b> ' + precisionWord(fit) + ' (' + fit.nDraws + ' posterior draws, ' +
+        essText(fit) + ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ').</li>' +
         '</ul></details>';
     } else {
       var ts = M.drug().THETA;
@@ -5164,12 +5219,12 @@ table.data tr.assumed td { background: #fffbeb; }
         '<th title="' + (rel.ssMode ? 'Day of treatment, where day 0 = the latest dose of the steady-state regimen (negative days = preceding cycles)' : 'Day of treatment since the first dose') + '">Day</th>' +
         '<th title="Calendar date of the trough">Date</th>' +
         '<th class="num" title="Median and 5th–95% range of the true (latent) trough concentration">Median trough [5–95%]</th>' +
-        '<th class="num" title="Probability that the true trough stays above the target, given the fitted posterior for this patient">P(&gt; ' + state.target.value + ' µg/mL)</th></tr></thead><tbody>';
+        '<th class="num" title="Probability that the true trough stays above the target, given the fitted posterior for this patient. Assay error is not included: a measured level can differ">P(true trough &gt; ' + state.target.value + ' <span class="unit">µg/mL</span>)</th></tr></thead><tbody>';
       fit.troughs.forEach(function (tr) {
         var future = tr.t > rel.nowRel - 0.02;
         thr += '<tr class="' + (future ? '' : 'past') + (tr.assumed ? ' assumed' : '') + '">' +
-          '<td data-label="Day">' + fmtC(tr.t) + '</td>' +
-          '<td data-label="Date">' + fmtDate(rel.t0ms + tr.t * DAY) +
+          '<td data-label="Day">' + fmtDays(tr.t) + '</td>' +
+          '<td data-label="Date">' + troughDate(rel, tr.t) +
           (tr.assumed ? (fit.planned
             ? ' <span class="tag-assumed" title="Next dose of the planned regimen you entered (' + fmtC(fit.planned.amt) + ' mg q' +
               fmtDays(fit.planned.interval) + 'd), not yet given.">planned dose</span>'
@@ -5434,7 +5489,7 @@ table.data tr.assumed td { background: #fffbeb; }
       if (ss0) t0 = ss0.A;
     }
     if (t0 == null) t0 = state.doses.length ? state.doses[0].t : (state.obs[0].t);
-    var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Conc (µg/mL)</th>' +
+    var h = '<thead><tr><th>Day</th><th>Date &amp; time</th><th class="num">Conc (<span class="unit">µg/mL</span>)</th>' +
       '<th class="num">In fit</th><th></th></tr></thead><tbody>';
     state.obs.forEach(function (o, i) {
       var concCell = o.lloq
@@ -5959,6 +6014,7 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   function showEmpty() {
+    if ($('chartCaption')) $('chartCaption').textContent = '';
     $('chart').innerHTML = '<div class="note">Enter the dosing schedule and press “Run forecast” to see the concentration–time plot.</div>';
     $('fitStatus').innerHTML = '<div class="note">Enter the patient, add the actual doses (and measurements if available), then press “Run forecast”.</div>';
     $('paramBlock').innerHTML = $('troughBlock').innerHTML = $('advisoryBlock').innerHTML = '';
@@ -5983,6 +6039,7 @@ table.data tr.assumed td { background: #fffbeb; }
    * card 4 (the regimen explorer), which reuses this same fit and would
    * otherwise keep showing a scan computed from the now-outdated posterior. */
   function showStaleResults() {
+    if ($('chartCaption')) $('chartCaption').textContent = '';
     $('chart').innerHTML = '<div class="note">Forecast cleared because the inputs changed. Press “Run forecast” to see the updated prediction.</div>';
     $('fitStatus').innerHTML = '';
     $('paramBlock').innerHTML = $('troughBlock').innerHTML = $('advisoryBlock').innerHTML = '';
@@ -6528,13 +6585,13 @@ table.data tr.assumed td { background: #fffbeb; }
       .sort(function (a, b) { return a.t - b.t; });
     if (upcoming.length) {
       var next = upcoming[0];
-      out.push('Predicted trough before the next dose (' + fmtDate(rel.t0ms + next.t * DAY) + '): median ' +
+      out.push('Predicted true trough before the next dose (' + troughDate(rel, next.t) + '): median ' +
         fmtC(next.med) + ' µg/mL [5–95% ' + fmtC(next.p5) + '–' + fmtC(next.p95) + '], P(trough > ' +
         st.target.value + ' µg/mL) = ' + fmtPct(next.pTarget) + '.');
       var worst = upcoming.reduce(function (a, b) { return b.pTarget < a.pTarget ? b : a; });
       if (worst.t !== next.t) {
-        out.push('The lowest predicted attainment among upcoming doses is on ' + fmtDate(rel.t0ms + worst.t * DAY) +
-          ': median ' + fmtC(worst.med) + ' µg/mL, P(trough > ' + st.target.value + ' µg/mL) = ' + fmtPct(worst.pTarget) + '.');
+        out.push('The lowest predicted attainment among upcoming doses is on ' + troughDate(rel, worst.t) +
+          ': median ' + fmtC(worst.med) + ' µg/mL, P(true trough > ' + st.target.value + ' µg/mL) = ' + fmtPct(worst.pTarget) + '.');
       }
       if (upcoming.some(function (tr) { return tr.pTarget < 0.9; })) {
         out.push('The trough target is not predicted to be reached with ≥ 90% probability at one or more upcoming doses.');
@@ -6642,7 +6699,7 @@ table.data tr.assumed td { background: #fffbeb; }
     // 3 — fit quality
     h += '<h3 class="rp-h">Fit quality</h3><table class="rp-kv">';
     h += '<tr><td>Method</td><td>' + (fit.hasObs ?
-      'MAP-Bayesian individualization + MCMC (' + fit.nDraws + ' posterior draws, ESS ≈ ' + Math.max(1, Math.round(fit.essCL || 0)) +
+      'MAP-Bayesian individualization + MCMC (' + fit.nDraws + ' posterior draws, ' + essText(fit) +
       ', acceptance ' + (fit.acceptance ? fit.acceptance.toFixed(2) : '–') + ')' :
       'Population (prior) forecast, no individualization') + '</td></tr>';
     if (fit.hasObs) {
@@ -6668,9 +6725,24 @@ table.data tr.assumed td { background: #fffbeb; }
         }
       }
     }
-    h += '<tr><td>Residual error model</td><td>' +
-      (spec.SIGMA.ADD > 0 ? 'additive ' + spec.SIGMA.ADD + ' + ' : '') + 'proportional ' + spec.SIGMA.PROP +
-      ((st.errMult || 1) !== 1 ? ' (scaled ×' + st.errMult + ')' : '') + '</td></tr>';
+    h += '<tr><td>Residual error model</td><td>' + residualText(spec) +
+      ((st.errMult || 1) !== 1 ? ', scaled ×' + st.errMult : '') + '</td></tr>';
+    /* Review C14: the convergence diagnostics shown on screen belong in the
+     * signed record too. */
+    if (fit.hasObs) {
+      var conv = [];
+      var rh = (fit.rhat || []).filter(function (r) { return r != null && isFinite(r); });
+      if (rh.length) {
+        var rnm = (fit.map && fit.map.etaNames) || [];
+        var badRh = [];
+        (fit.rhat || []).forEach(function (r, i) { if (r != null && r > 1.05) badRh.push(rnm[i] || ('eta' + (i + 1))); });
+        conv.push('split R-hat max ' + Math.max.apply(null, rh).toFixed(3) +
+          (badRh.length ? ': above 1.05 for ' + badRh.join(', ') + ', the chains did not mix well' : ' (below 1.05, chains mixed)'));
+      }
+      if (fit.map && fit.map.startGap > 1) conv.push('the parameter search reached different solutions from different starting points (objective-function gap ' + fmtC(fit.map.startGap) + ')');
+      if (fit.covFallback) conv.push('parameter uncertainty taken from the population prior (curvature at the optimum not usable)');
+      h += '<tr><td>Convergence</td><td>' + esc(conv.join('; ')) + '</td></tr>';
+    }
     /* The preset name alone is not auditable — a reader needs to see how much
      * each ACTUAL sample was discounted, at its own individual prediction. */
     if (fit && fit.recencyMaxMult > 1) {
@@ -6710,7 +6782,7 @@ table.data tr.assumed td { background: #fffbeb; }
     h += '<div class="rp-legend">Solid line: median predicted concentration · shaded band: 90% credible interval for the true concentration (residual assay error not included) · red points: measured concentrations · dashed horizontal line: trough target (' +
       st.target.value + ' µg/mL).</div>';
     if (fit.troughs.length) {
-      h += '<table class="rp-table"><thead><tr><th>Day</th><th>Date</th><th>Status</th><th class="num">Median trough [5–95%] (µg/mL)</th><th class="num">P(&gt; ' +
+      h += '<table class="rp-table"><thead><tr><th>Day</th><th>Date</th><th>Status</th><th class="num">Median trough [5–95%] (µg/mL)</th><th class="num">P(true trough &gt; ' +
         st.target.value + ' µg/mL)</th></tr></thead><tbody>';
       var nowRelR = rel.nowRel != null ? rel.nowRel : 0;
       fit.troughs.forEach(function (tr) {
@@ -6720,10 +6792,10 @@ table.data tr.assumed td { background: #fffbeb; }
           ? (fit.planned ? '<b>planned next dose</b> (' + fmtC(fit.planned.amt) + ' mg q' + fmtDays(fit.planned.interval) + 'd)'
             : '<b>assumed next dose</b> (q' + fmtDays(fit.interval) + 'd)')
           : (tr.t <= nowRelR ? 'past' : 'upcoming');
-        h += '<tr' + (tr.assumed ? ' class="rp-assumed"' : '') + '><td>' + fmtC(tr.t) + '</td><td>' + fmtDate(rel.t0ms + tr.t * DAY) + '</td>' +
+        h += '<tr' + (tr.assumed ? ' class="rp-assumed"' : '') + '><td>' + fmtDays(tr.t) + '</td><td>' + troughDate(rel, tr.t) + '</td>' +
           '<td>' + status + '</td>' +
           '<td class="num">' + fmtC(tr.med) + ' [' + fmtC(tr.p5) + '–' + fmtC(tr.p95) + ']</td>' +
-          '<td class="num">' + fmtPct(tr.pTarget) + (tr.pCI && isFinite(tr.pCI[0]) ? ' (' + Math.round(tr.pCI[0] * 100) + '–' + Math.round(tr.pCI[1] * 100) + '%)' : '') + '</td></tr>';
+          '<td class="num">' + esc(fmtPct(tr.pTarget)) + (fmtPci(tr.pCI) ? ' (' + fmtPci(tr.pCI) + ')' : '') + '</td></tr>';
       });
       h += '</tbody></table>';
       // F9 (independent audit, 2026-09-13): same caveat as the on-screen
