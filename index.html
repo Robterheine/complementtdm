@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mAb TDM (Eculizumab · Ravulizumab · Crovalimab)</title>
-<!-- Built single-file artifact: complementtdm.html (build: 2026-09-30 18:08 UTC) -->
+<!-- Built single-file artifact: complementtdm.html (build: 2026-09-30 19:58 UTC) -->
 <style>
 /* app.css (inlined) */
 /* mAb TDM app styles */
@@ -415,6 +415,9 @@ button.info:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
  * ========================================================================= */
 @media (max-width: 700px) {
   .sess-row { flex-direction: column; align-items: stretch; }
+  /* v0.46.0: in a column the flex-basis (128px / 170px) becomes a HEIGHT -- the 32px
+   * trough-target fold sat in a 128px box, ~400px of blank space on a phone. */
+  .sess-field, .sess-field.sess-drug { flex: 0 0 auto; }
   .sess-hint { padding-bottom: 0; min-height: 0; }
   .iv-controls input[type="number"] { width: 84px; }
 }
@@ -721,7 +724,8 @@ table.data tr.assumed td { background: #fffbeb; }
           <div><label class="f" for="dose-dt">Date &amp; time</label><input type="datetime-local" id="dose-dt" title="Scheduled date and time of the administration"></div>
           <div><label class="f" for="dose-amt">Dose (mg)</label><input type="number" id="dose-amt" min="50" max="4000" step="any" placeholder="e.g. 900" title="Dose in mg"></div>
           <div id="doseRouteWrap" style="display:none"><label class="f" for="dose-route">Route</label>
-            <select id="dose-route" title="IV doses enter the central compartment directly; SC doses are absorbed via the depot compartment">
+            <select id="dose-route" title="Auto: the first dose is IV (loading), every later dose is SC. IV doses enter the central compartment directly; SC doses are absorbed via the depot compartment">
+              <option value="auto" selected>Auto (IV first, then SC)</option>
               <option value="iv">IV</option>
               <option value="sc">SC</option>
             </select>
@@ -976,7 +980,7 @@ table.data tr.assumed td { background: #fffbeb; }
 (function (root) {
   'use strict';
   var ECU = root.ECU = root.ECU || {};
-  ECU.VERSION = '0.43.0';
+  ECU.VERSION = '0.46.0';
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1556,9 +1560,16 @@ table.data tr.assumed td { background: #fffbeb; }
 
     var ev = [];
     var i, d;
+    /* v0.44.0 (review H2): events are grouped below with `ev[i].t === tEv`,
+     * which is never true for NaN, so the index stops advancing and the loop
+     * never ends. Refuse a non-finite time up front instead of hanging. */
+    for (i = 0; i < outTimes.length; i++) {
+      if (!isFinite(outTimes[i])) throw new Error('simulate(): an output time is not a finite number.');
+    }
     for (i = 0; i < doses.length; i++) {
       d = doses[i];
       if (!(d.amt > 0)) continue;
+      if (!isFinite(d.t)) throw new Error('simulate(): a dose time is not a finite number.');
       if (d.bolus) {
         ev.push({ t: d.t, rank: 2, kind: 'bolus', amt: d.amt });
       } else if (d.route === 'sc') {
@@ -1570,6 +1581,7 @@ table.data tr.assumed td { background: #fffbeb; }
         ev.push({ t: d.t, rank: 2, kind: 'sc', amt: d.amt * (p.fSc != null ? p.fSc : (s.BIOAVAIL_SC != null ? s.BIOAVAIL_SC : 1)) });
       } else {
         var dd = d.dur != null ? d.dur : dur;
+        if (!(dd > 0) || !isFinite(dd)) throw new Error('simulate(): an infusion duration is not a positive number.');
         var rate = d.amt / dd;
         ev.push({ t: d.t, rank: 1, kind: 'rate', dr: rate });
         ev.push({ t: d.t + dd, rank: 1, kind: 'rate', dr: -rate });
@@ -2575,14 +2587,38 @@ table.data tr.assumed td { background: #fffbeb; }
     var def = fallback > 0 ? fallback : (M.drug().ssIntervalDefault || 14);
     var best = def, bestN = 0;
     var counts = {};
-    var start = Math.max(1, Math.floor(doses.length / 2));
-    for (var i = start; i < doses.length; i++) {
-      var k = Math.round((doses[i].t - doses[i - 1].t) * 100) / 100;
+    /* v0.45.0 (review S1): a drug with a declared loading phase (crovalimab: five
+     * doses) reads its interval from the post-loading doses only. Counting the
+     * loading spacings made the app assume the 7-day loading interval for six to
+     * eight doses, i.e. weekly maintenance. */
+    var lc = M.drug().loadingDoseCount || 0;
+    var src = (lc > 0 && doses.length > lc) ? doses.slice(lc) : doses;
+    var start = Math.max(1, Math.floor(src.length / 2));
+    for (var i = start; i < src.length; i++) {
+      var k = Math.round((src[i].t - src[i - 1].t) * 100) / 100;
       if (!(k > 0)) continue;
       counts[k] = (counts[k] || 0) + 1;
-      if (counts[k] > bestN) { bestN = counts[k]; best = k; }
+      /* >= : on a tie the MOST RECENT interval wins. The old strict > kept the
+       * oldest mode, so weekly x4 then q14d (seven doses) stayed at q7d. */
+      if (counts[k] >= bestN) { bestN = counts[k]; best = k; }
     }
     return best;
+  }
+
+  /* v0.45.0 (review S1): true when the last two spacings disagree -- an interval
+   * was just changed, or the loading phase just ended -- so the interval derived
+   * from the history is not a reliable statement of the regimen. Tolerance: a
+   * day or two of jitter, or a quarter of the interval, is not a change (14 then
+   * 17 days is one late dose; 14 then 21 is an extension). Like modalInterval,
+   * a drug with a loading phase is judged on its post-loading doses only. */
+  function spacingUnsettled(doses) {
+    var lc = M.drug().loadingDoseCount || 0;
+    var src = (lc > 0 && doses.length > lc) ? doses.slice(lc) : doses;
+    var n = src.length;
+    if (n < 3) return false;
+    var g1 = src[n - 1].t - src[n - 2].t, g2 = src[n - 2].t - src[n - 3].t;
+    if (!(g1 > 0 && g2 > 0)) return false;
+    return Math.abs(g1 - g2) > Math.max(2, 0.25 * Math.max(g1, g2));
   }
 
   function buildGrid(doses, horizon, interval, windowStart, dur) {
@@ -2619,10 +2655,10 @@ table.data tr.assumed td { background: #fffbeb; }
 
   /* Trough times: just before each dose from the 2nd onward + one virtual
    * next dose at lastDose + modal interval. */
-  function troughTimesOf(doses, interval, planned) {
+  function troughTimesOf(doses, interval, planned, noAssume) {
     var out = [];
     for (var i = 1; i < doses.length; i++) out.push(doses[i].t - 1e-6);
-    var vt = virtualTroughTime(doses, interval, planned);
+    var vt = noAssume ? null : virtualTroughTime(doses, interval, planned);
     if (vt != null) out.push(vt);
     return out.sort(function (a, b) { return a - b; });
   }
@@ -2703,6 +2739,13 @@ table.data tr.assumed td { background: #fffbeb; }
     var allTimes = doses.map(function (d) { return d.t; }).concat(obs.map(function (o) { return o.t; }));
     if (allTimes.some(function (tv) { return Math.abs(tv) > 1e5; })) {
       throw new Error('A dose or measurement time looks like milliseconds, not days — this engine’s time unit is days throughout. Convert to days before calling runFit.');
+    }
+    /* v0.44.0 (review H2): NaN is not caught by the comparison above (NaN > 1e5
+     * is false), and a NaN event time used to send simulate() into an infinite
+     * loop -- an unparseable date in an imported session froze the tab. Observation
+     * times are already filtered by isFinite above; dose times are checked here. */
+    if (doses.some(function (d) { return !isFinite(d.t); })) {
+      throw new Error('A dose has no valid time (not a number) — check the dose dates.');
     }
     /* Custom infusion times (2026-09-14, author-approved plan). `d.dur` is in
      * DAYS (the engine's native unit) throughout -- the UI works in minutes
@@ -2821,7 +2864,18 @@ table.data tr.assumed td { background: #fffbeb; }
      * in this function. See `loadingPhase`'s own comment below for why the
      * continuation can be empty (crovalimab, still in its loading phase). */
     var contSpec = M.drug();
-    var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount || 0);
+    /* v0.45.0 (review S1): the loading guard now runs through the FIRST
+     * MAINTENANCE dose (loadingDoseCount + 1 doses). The sixth crovalimab dose is
+     * the first maintenance one and the gap to the next is still unknown; with
+     * only five covered, six to eight doses read the loading spacing as q7d. */
+    var loadingPhase = doses.length > 0 && doses.length <= (contSpec.loadingDoseCount ? contSpec.loadingDoseCount + 1 : 0);
+    var unsettled = spacingUnsettled(doses);
+    /* May the app assume or project a next administration? Only when the regimen
+     * is the clinician's own (planned) or the history states one unambiguously.
+     * Otherwise it does not guess: no assumed trough, no projected doses, and the
+     * regimen explorer is not prefilled with a guessed interval. */
+    var assume = !!planned || (!loadingPhase && !unsettled);
+    var intervalTrusted = !!planned || (doses.length >= 2 && !loadingPhase && !unsettled);
     var contRoute = contSpec.adminRoutes ? contSpec.adminRoutes.subsequent : (doses[doses.length - 1].route || null);
     var contAmt = planned ? planned.amt : doses[doses.length - 1].amt;
     var chartProjectedDoses = [];
@@ -2829,7 +2883,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * virtualTroughTime() above -- with only one dose, `interval` is
      * necessarily the drug-default fallback, and drawing a "continuation"
      * from a single data point is a guess, not a continuation. */
-    if (!loadingPhase && (doses.length >= 2 || planned)) {
+    if (assume && (doses.length >= 2 || planned)) {
       for (var pc = 1; pc <= 30; pc++) {
         var pt = lastDose + pc * interval;
         if (pt >= horizon) break;
@@ -2911,9 +2965,9 @@ table.data tr.assumed td { background: #fffbeb; }
     }
 
     // ---- posterior predictive on grid + troughs (within the display window) ----
-    var troughs = troughTimesOf(doses, interval, planned).filter(function (t) { return t >= windowStart - 1e-9; });
+    var troughs = troughTimesOf(doses, interval, planned, !assume).filter(function (t) { return t >= windowStart - 1e-9; });
     // the one trough that assumes a next dose rather than reflecting an entered one
-    var virtualT = virtualTroughTime(doses, interval, planned);
+    var virtualT = assume ? virtualTroughTime(doses, interval, planned) : null;
     var outTimes = grid.concat(troughs);
     prog(0.8, 'Posterior predictive simulation…');
     // v0.8.1: the posterior band also carries the population absorption
@@ -3094,6 +3148,8 @@ table.data tr.assumed td { background: #fffbeb; }
       chartBand: chartBand,
       chartProjectedDoses: chartProjectedDoses,
       loadingPhase: loadingPhase,
+      spacingUnsettled: unsettled,
+      intervalTrusted: intervalTrusted,
       pediatricWarn: pediatricWarn,
       samplesDuringInfusion: samplesDuringInfusion,
       troughs: troughStats,
@@ -3371,6 +3427,7 @@ table.data tr.assumed td { background: #fffbeb; }
     statsOfMatrix: statsOfMatrix,
     probAbove: probAbove,
     modalInterval: modalInterval,
+    spacingUnsettled: spacingUnsettled,
     buildGrid: buildGrid,
     troughTimesOf: troughTimesOf,
     virtualTroughTime: virtualTroughTime,
@@ -3433,7 +3490,7 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   /* cfg: {
@@ -3533,7 +3590,7 @@ table.data tr.assumed td { background: #fffbeb; }
 
     function escT(x) {
       return String(x == null ? '' : x)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     var s = [];
     /* role="img" + <title>/<desc>: without them a screen-reader user got nothing
@@ -3792,7 +3849,7 @@ table.data tr.assumed td { background: #fffbeb; }
   'use strict';
   var ECU = root.ECU = root.ECU || {};
 
-  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function fmtC(v) {
     if (!isFinite(v)) return '–';
     if (v >= 100) return String(Math.round(v));
@@ -4168,7 +4225,7 @@ table.data tr.assumed td { background: #fffbeb; }
     parts.push('proportional CV ' + (Math.sqrt(spec.SIGMA.PROP) * 100).toFixed(1) + '%'); vars.push(spec.SIGMA.PROP);
     return parts.join(' + ') + ' (NONMEM variances ' + vars.join(' and ') + ')';
   }
-  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
   /* A mistyped year in a datetime-local field is one arrow-press away and used
    * to be invisible everywhere. Challenge anything outside roughly the last
@@ -4351,8 +4408,9 @@ table.data tr.assumed td { background: #fffbeb; }
     // blocked below it (a hard refusal, same as an out-of-range weight),
     // but 12-16 is allowed through with a flagged, non-blocking advisory
     // (see runFit's pediatricWarn) rather than being disabled here too.
-    var ageOk = !M.drug().covariateAge ||
-      (state.patient.age >= (M.drug().pediatricBlockAge || 1) && state.patient.age <= 100);
+    var ageMsg = ageReason(M.drug(), state.patient.age);
+    var ageOk = !ageMsg;
+    var errMultOk = state.errMultOk !== false;
     var doseOk = currentMode() === 'ss' ? !!readSS(false) : state.doses.length > 0;
     var prior = currentMode() === 'ss' ? 'no' : readPrior();
     var tr = M.drug().targetRange || { min: 10, max: 500 };
@@ -4367,9 +4425,10 @@ table.data tr.assumed td { background: #fffbeb; }
         ? 'a weight between ' + wr.min + ' and ' + wr.max + ' kg for ' + M.drug().label
         : 'the patient\u2019s weight');
     }
-    if (!ageOk) reasons.push('the patient\u2019s age');
+    if (!ageOk) reasons.push(ageMsg);
     if (!doseOk) reasons.push(currentMode() === 'ss' ? 'a steady-state dose and interval' : 'at least one dose');
     if (!tgtOk) reasons.push('a trough target between ' + tr.min + ' and ' + tr.max + ' \u00b5g/mL');
+    if (!errMultOk) reasons.push('an assay error multiplier between 0.1 and 10 (Assay settings, below the measurements)');
     if (prior == null) reasons.push('an answer to \u201ctreated before the first dose entered?\u201d');
     if (prior === 'yes') reasons.push('the earlier doses (then answer No), or use Steady state mode,');
     var ok = reasons.length === 0 && !state.running;
@@ -4455,22 +4514,52 @@ table.data tr.assumed td { background: #fffbeb; }
   }
 
   // --------------------------- inputs -------------------------------------
+  /* v0.46.0 (review U2): the assay error multiplier used to be replaced by 1 when
+   * it was outside 0.1-10, with no message and the typed number still showing in
+   * the field. A typed 50 gave output identical to 1, while a valid 3 moved
+   * P(trough > 75) from 96 % to 69 %. Empty means "leave at the default 1";
+   * anything else outside the range is reported and blocks the run. */
+  function parseErrMult(raw) {
+    if (raw == null || String(raw).trim() === '') return { ok: true, value: 1 };
+    var v = Number(raw);
+    if (!isFinite(v) || v < 0.1 || v > 10) return { ok: false, value: 1 };
+    return { ok: true, value: v };
+  }
+  /* v0.46.0 (review U5): why the age is not acceptable, in the words the Run hint
+   * needs, or null when it is. Typing 8 for crovalimab used to say only "the
+   * patient's age". */
+  function ageReason(spec, age) {
+    if (!spec || !spec.covariateAge) return null;
+    var min = spec.pediatricBlockAge || 1;
+    if (!(age > 0)) return 'the patient\u2019s age';
+    if (age < min) return 'an age of ' + min + ' years or more for ' + spec.label;
+    if (age > 100) return 'an age of 100 years or less';
+    return null;
+  }
+  /* v0.46.0 (review D2): the age belongs to the model only when the drug has an age
+   * covariate. The field is hidden for the others, but its value (typed for
+   * crovalimab) used to stay in the session and be written to the export. */
+  function effectiveAge(spec, raw) {
+    var a = parseFloat(raw);
+    return spec && spec.covariateAge && isFinite(a) && a > 0 ? a : null;
+  }
+
   function readPatient() {
     state.patient.code = $('pt-code').value.trim();
     state.patient.wt = parseFloat($('pt-wt').value);
-    var ag = parseFloat($('pt-age') && $('pt-age').value);
-    state.patient.age = isFinite(ag) && ag > 0 ? ag : null;
     state.patient.disease = $('pt-disease').value;
     state.drug = $('pt-drug').value || 'eculizumab';
     if (M.drugs[state.drug]) M.select(state.drug);
+    state.patient.age = effectiveAge(M.drug(), $('pt-age') ? $('pt-age').value : '');   // v0.46.0: only when the drug uses it
     if (!M.drug().diseaseCovariate) state.patient.disease = 'PNH';  // not a covariate of this model
     var tv = parseFloat($('pt-target').value);
     state.target.value = isFinite(tv) && tv > 0 ? tv : null;
     if (state.target.value == null) state.target.value = M.drug().targetDefault || 75;
     var ll = $('pt-lloq').value;
     state.lloq = ll === '' ? null : parseFloat(ll);
-    var em = parseFloat($('pt-errmult') && $('pt-errmult').value);
-    state.errMult = isFinite(em) && em >= 0.1 && em <= 10 ? em : 1;
+    var emp = parseErrMult($('pt-errmult') ? $('pt-errmult').value : '');
+    state.errMult = emp.value;
+    state.errMultOk = emp.ok;   // v0.46.0: an out-of-range value is reported, not silently replaced
     var rc = $('pt-recency');
     state.recency = rc && RECENCY_PRESETS.indexOf(rc.value) >= 0 ? rc.value : 'off';
   }
@@ -4482,6 +4571,25 @@ table.data tr.assumed td { background: #fffbeb; }
    * use to convert epoch-ms to days. durToMinutes()/minutesToDur() are the
    * only two places this conversion happens; every other line of code deals
    * in whichever unit it already dealt in before this feature existed. */
+  /* v0.45.0 (review U1): which route a new dose gets. The select used to offer
+   * only iv / sc and stay on IV, so the "first dose IV, later doses SC" fallback
+   * below was unreachable and every SC dose was silently fitted as IV. "Auto"
+   * (the default) resolves by position. A drug without adminRoutes has no
+   * route concept. */
+  function resolveDoseRoute(spec, selected, nDoses) {
+    var ar = spec && spec.adminRoutes;
+    if (!ar) return null;
+    if (selected === 'iv' || selected === 'sc') return selected;
+    return nDoses > 0 ? ar.subsequent : ar.first;
+  }
+  /* v0.45.0 (review U4): a second dose within 24 h of another only looks like a
+   * double entry when it has the SAME route. Crovalimab's standard start (IV in
+   * the afternoon of day 1, the first SC dose next morning) is 19 h apart. */
+  function isDuplicateDose(doses, t, route) {
+    return doses.some(function (d) {
+      return Math.abs(d.t - t) < 24 * 3600000 && (d.route || null) === (route || null);
+    });
+  }
   function durToMinutes(days) { return Math.round(days * 1440); }
   function minutesToDur(min) { return min / 1440; }
   // Display only (dose table, report): minutes below an hour, hours (1 dp)
@@ -4506,7 +4614,7 @@ table.data tr.assumed td { background: #fffbeb; }
     if (!wrap) return;
     var spec = M.drug();
     var routeSel = $('dose-route');
-    var isIV = !spec.adminRoutes || !routeSel || routeSel.value !== 'sc';
+    var isIV = !spec.adminRoutes || !routeSel || resolveDoseRoute(spec, routeSel.value, state.doses.length) !== 'sc';
     wrap.style.display = isIV ? 'block' : 'none';
     var durEl = $('dose-dur');
     if (durEl && !durEl.value) durEl.placeholder = 'e.g. ' + durToMinutes(spec.INFUSION_D);
@@ -4932,6 +5040,10 @@ table.data tr.assumed td { background: #fffbeb; }
       alert(M.drug().label + ' requires an age between ' + minAge + ' and 100 years. The model was not developed for younger children.');
       return;
     }
+    if (state.errMultOk === false) {
+      alert('The assay error multiplier must be between 0.1 and 10 (Assay settings, below the measurements), or left at 1.');
+      return;
+    }
     var tRange = M.drug().targetRange || { min: 10, max: 500 };
     if (!(state.target.value >= tRange.min && state.target.value <= tRange.max)) {
       alert('Enter a trough target between ' + tRange.min + ' and ' + tRange.max + ' \u00b5g/mL for ' + M.drug().label + '.');
@@ -5328,10 +5440,15 @@ table.data tr.assumed td { background: #fffbeb; }
      * phase (see fit.loadingPhase in runFit); this says why, since a
      * silently absent projection is easy to misread as "the app forgot,"
      * not "the app knows this interval isn't the maintenance one yet." */
-    if (fit.loadingPhase) {
-      ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished. The forecast is not projected past the last entered dose, ' +
-        'because the interval used so far is the loading schedule’s, not the eventual maintenance interval. Enter the planned maintenance ' +
-        'doses as they are given, or switch to Steady state mode once maintenance begins.', 'warn'));
+    if (fit.loadingPhase && !fit.planned) {
+      ad.push(noteHtml(M.drug().label + '’s loading regimen is not finished. The forecast is not projected past the last entered dose and no ' +
+        'next-dose trough is assumed, because the interval so far is the loading schedule’s, not the eventual maintenance interval. ' +
+        'Enter the planned regimen below the dose form to see them, or add the maintenance doses as they are given.', 'warn'));
+    } else if (fit.spacingUnsettled && !fit.planned) {
+      /* v0.45.0 (review S1): the last two spacings disagree -- an interval was just
+       * changed -- so the app does not guess which one continues. */
+      ad.push(noteHtml('The last two dosing intervals differ, so the app does not guess the next one: no next-dose trough is assumed and no ' +
+        'doses are projected. Enter the planned regimen below the dose form to see them.', 'warn'));
     }
     /* F8 (independent audit, 2026-09-13): passive, non-blocking note (author's
      * choice) — informs without gating the workflow, same register as the
@@ -5356,7 +5473,7 @@ table.data tr.assumed td { background: #fffbeb; }
         infDates.join('; ') + '.', 'warn'));
     }
     if (state.lloq > 0) {
-      ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + state.lloq + ' µg/mL).', ''));
+      ad.push(noteHtml('Below-LLOQ samples handled with the M3 method (LLOQ = ' + esc(String(state.lloq)) + ' µg/mL).', ''));
     }
     /* Recency weighting changes what the fit is based on, so it must never be
      * silent: say which samples were discounted and by how much. */
@@ -5389,7 +5506,7 @@ table.data tr.assumed td { background: #fffbeb; }
       }
       if (badR.length) {
         ad.push(noteHtml('The posterior sampler did not fully mix for ' + esc(badR.join(', ')) +
-          ' (R-hat > 1.05). The reported intervals for those parameters may be unreliable; re-run, or add a sample.', 'warn'));
+          ' (R-hat > 1.05). The reported intervals for those parameters may be unreliable; add a sample, or check the entered doses and times.', 'warn'));
       }
     }
     if (!state.obs.length) {
@@ -5493,6 +5610,7 @@ table.data tr.assumed td { background: #fffbeb; }
   // ----------------------------- editors ----------------------------------
   function renderDoses() {
     var tb = $('doseTable');
+    syncDoseDurVisibility();   // v0.45.0: Auto moves from the first route to the later one after dose 1
     if (currentMode() === 'ss') {
       tb.innerHTML = '<tr><td class="empty-cell">Regimen defined above (fixed dose + interval at steady state). Switch to “Full schedule” to see and edit individual doses.</td></tr>';
       return;
@@ -5524,7 +5642,7 @@ table.data tr.assumed td { background: #fffbeb; }
         ? '<td>' + (d.dur != null && d.route !== 'sc' ? fmtDur(d.dur) : (d.route === 'sc' ? '–' : fmtDur(M.drug().INFUSION_D) + ' (default)')) + '</td>'
         : '';
       h += '<tr class="' + (d.t < now ? 'past' : '') + '"><td>' + fmtC(relDay) + '</td><td>' + fmtDate(d.t) + '</td>' +
-        '<td class="num"><b>' + d.amt + '</b></td>' + routeCell + durCell +
+        '<td class="num"><b>' + esc(String(d.amt)) + '</b></td>' + routeCell + durCell +
         '<td class="num"><button class="linklike" data-rmdose="' + i + '" title="Remove this dose">remove</button></td></tr>';
     });
     h += '</tbody>';
@@ -5543,6 +5661,8 @@ table.data tr.assumed td { background: #fffbeb; }
       tb.innerHTML = '<tr><td class="empty-cell">No measurements yet.</td></tr>';
       return;
     }
+    // v0.46.0 (review U6): chronological, as the dose table is (entry order hid an out-of-order date)
+    state.obs.sort(function (a, b) { return a.t - b.t; });
     var t0 = null;
     if (currentMode() === 'ss') {
       var ss0 = readSS(false);
@@ -5553,7 +5673,7 @@ table.data tr.assumed td { background: #fffbeb; }
       '<th class="num">In fit</th><th></th></tr></thead><tbody>';
     state.obs.forEach(function (o, i) {
       var concCell = o.lloq
-        ? '&lt; ' + (state.lloq || 'LLOQ')
+        ? '&lt; ' + esc(String(state.lloq || 'LLOQ'))
         : '<b>' + fmtC(o.c) + '</b>';
       h += '<tr' + (o.exclude ? ' class="obs-ex"' : '') + '><td>' + fmtC((o.t - t0) / DAY) + '</td><td>' + fmtDate(o.t) + '</td>' +
         '<td class="num">' + concCell + '</td>' +
@@ -5622,48 +5742,133 @@ table.data tr.assumed td { background: #fffbeb; }
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
 
+  /* v0.44.0 (review H1, H2) -- the ONE gate every stored session passes through,
+   * whether it comes from an imported file or from the autosave in localStorage.
+   * A session is data someone else may have written (colleagues e-mail these
+   * files), so nothing in it is trusted to be the type its field name suggests:
+   *   - a dose amount of "900<img onerror=...>" used to reach innerHTML and run;
+   *   - a date that does not parse became NaN, and a NaN dose time sent the
+   *     engine into an infinite loop that froze the tab.
+   * Every number is coerced and must be finite, every route must be a known
+   * one, every date must parse; anything else refuses the whole file with a
+   * message naming the entry. Free text (notes, names) is kept verbatim: it is
+   * escaped where it is written out, not stripped here. Pure function, no DOM. */
+  function cleanSession(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.doses)) throw new Error('not a session file');
+    function num(v) {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && v.trim() !== '') return Number(v);
+      return NaN;
+    }
+    function when(v) {
+      if (typeof v === 'number') return v;                      // autosave stores epoch-ms
+      if (typeof v === 'string' && v.trim() !== '') return Date.parse(v);
+      return NaN;
+    }
+    function optNum(v, what, minExclusive) {
+      if (v == null || v === '') return null;
+      var n = num(v);
+      if (!isFinite(n) || (minExclusive != null && !(n > minExclusive))) throw new Error(what + ' is not a valid number');
+      return n;
+    }
+    var out = {};
+    var drugId = (data.drug && M.drugs[data.drug] && !M.drugs[data.drug].pending) ? data.drug : 'eculizumab';
+    out.drug = drugId;
+
+    var p = (data.patient && typeof data.patient === 'object') ? data.patient : {};
+    out.patient = {
+      code: typeof p.code === 'string' ? p.code : '',
+      wt: optNum(p.wt, 'the patient weight', 0),
+      age: optNum(p.age, 'the patient age', 0),
+      disease: p.disease === 'aHUS' ? 'aHUS' : 'PNH'
+    };
+    var tv = data.target && typeof data.target === 'object' ? data.target.value : null;
+    out.target = { value: optNum(tv, 'the trough target', 0) };
+    out.lloq = optNum(data.lloq, 'the LLOQ', -1e-12);
+    var em = num(data.errMult);
+    out.errMult = isFinite(em) && em >= 0.1 && em <= 10 ? em : 1;
+    out.recency = RECENCY_PRESETS.indexOf(data.recency) >= 0 ? data.recency : 'off';
+    out.report = {
+      preparedBy: data.report && typeof data.report.preparedBy === 'string' ? data.report.preparedBy : '',
+      advice: data.report && typeof data.report.advice === 'string' ? data.report.advice : ''
+    };
+
+    out.doses = data.doses.map(function (d, i) {
+      var n = i + 1;
+      if (!d || typeof d !== 'object') throw new Error('dose ' + n + ' is not a valid entry');
+      var t = when(d.t);
+      if (!isFinite(t)) throw new Error('dose ' + n + ' has no valid date');
+      var amt = num(d.amt);
+      if (!(isFinite(amt) && amt > 0)) throw new Error('dose ' + n + ' has no valid amount');
+      var route = (d.route == null || d.route === '') ? null : d.route;
+      if (route !== null && route !== 'iv' && route !== 'sc') throw new Error('dose ' + n + ' has an unknown route');
+      var o = { t: t, amt: amt, route: route };
+      if (d.dur != null) {
+        var du = num(d.dur);
+        if (!(isFinite(du) && du > 0)) throw new Error('dose ' + n + ' has an invalid infusion duration');
+        o.dur = du;
+      }
+      return o;
+    });
+    if (data.obs != null && !Array.isArray(data.obs)) throw new Error('the measurement list is not a list');
+    out.obs = (data.obs || []).map(function (o, i) {
+      var n = i + 1;
+      if (!o || typeof o !== 'object') throw new Error('sample ' + n + ' is not a valid entry');
+      var t = when(o.t);
+      if (!isFinite(t)) throw new Error('sample ' + n + ' has no valid date');
+      var lloq = !!o.lloq, c = null;
+      if (o.c != null && o.c !== '') {
+        c = num(o.c);
+        if (!(isFinite(c) && c >= 0)) throw new Error('sample ' + n + ' has no valid concentration');
+      } else if (!lloq) {
+        throw new Error('sample ' + n + ' has no valid concentration');
+      }
+      return { t: t, c: c, lloq: lloq, exclude: !!o.exclude, note: typeof o.note === 'string' ? o.note : '' };
+    });
+
+    var pl = data.plan && typeof data.plan === 'object' ? data.plan : null;
+    out.plan = pl ? { amt: isFinite(num(pl.amt)) ? num(pl.amt) : null, interval: isFinite(num(pl.interval)) ? num(pl.interval) : null } : null;
+    out.priorTx = (data.priorTx === 'yes' || data.priorTx === 'no') ? data.priorTx : null;
+    out.mode = data.mode === 'ss' ? 'ss' : 'full';
+    out.ss = null;
+    if (data.ss && typeof data.ss === 'object' && isFinite(when(data.ss.anchor))) {
+      var sd = num(data.ss.dose), si = num(data.ss.interval), sdur = num(data.ss.dur);
+      out.ss = { dose: isFinite(sd) ? sd : null, interval: isFinite(si) ? si : null,
+        anchor: when(data.ss.anchor), dur: (isFinite(sdur) && sdur > 0) ? sdur : null };
+    }
+    return out;
+  }
+
   function importJson(file) {
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        var data = JSON.parse(reader.result);
-        if (!data.doses || !Array.isArray(data.doses)) throw new Error('not a session file');
-        var drug = M.drugs[data.drug] ? data.drug : 'eculizumab';
+        var c = cleanSession(JSON.parse(reader.result));
+        var drug = c.drug;
         state.drug = drug;
         M.select(drug);
         $('pt-drug').value = drug;
         applyDrugUI();
-        state.patient = Object.assign({ code: '', wt: null, age: null, disease: 'PNH' }, data.patient || {});
-        state.target = data.target || { value: null };
+        state.patient = c.patient;
+        state.target = c.target;
         if (!(state.target.value > 0)) state.target.value = null;
-        state.lloq = data.lloq != null ? data.lloq : null;
-        state.errMult = data.errMult != null && data.errMult >= 0.1 && data.errMult <= 10 ? data.errMult : 1;
-        state.recency = RECENCY_PRESETS.indexOf(data.recency) >= 0 ? data.recency : 'off';
-        state.report = {
-          preparedBy: data.report && typeof data.report.preparedBy === 'string' ? data.report.preparedBy : '',
-          advice: data.report && typeof data.report.advice === 'string' ? data.report.advice : ''
-        };
-        state.doses = data.doses.map(function (d) {
-          var out = { t: Date.parse(d.t), amt: d.amt, route: d.route || null };
-          if (d.dur != null && isFinite(d.dur)) out.dur = d.dur;
-          return out;
-        });
+        state.lloq = c.lloq;
+        state.errMult = c.errMult;
+        state.recency = c.recency;
+        state.report = c.report;
+        state.doses = c.doses;
         /* v0.40.0: exclude + note are exported, so they must be imported too --
          * dropping them put an excluded sample silently back into the fit. */
-        state.obs = (data.obs || []).map(function (o) {
-          return { t: Date.parse(o.t), c: o.lloq && o.c == null ? null : parseFloat(o.c), lloq: !!o.lloq,
-            exclude: !!o.exclude, note: typeof o.note === 'string' ? o.note : '' };
-        });
+        state.obs = c.obs;
         // v0.40.0: form first, then setMode() -- see applySession() for why.
-        setPlanFields(data.plan);
-        setPrior(data.priorTx || null);
+        setPlanFields(c.plan);
+        setPrior(c.priorTx);
         syncInputs();
-        var m = data.mode === 'ss' ? 'ss' : 'full';
-        if (m === 'ss' && data.ss && isFinite(Date.parse(data.ss.anchor))) {
-          $('ss-dose').value = data.ss.dose != null ? data.ss.dose : 900;
-          $('ss-interval').value = data.ss.interval != null ? data.ss.interval : 14;
-          $('ss-anchor').value = toLocalInput(new Date(Date.parse(data.ss.anchor)));
-          if ($('ss-dur')) $('ss-dur').value = (data.ss.dur != null && isFinite(data.ss.dur)) ? data.ss.dur : '';
+        if (c.mode === 'ss' && c.ss) {
+          $('ss-dose').value = c.ss.dose != null ? c.ss.dose : 900;
+          $('ss-interval').value = c.ss.interval != null ? c.ss.interval : 14;
+          $('ss-anchor').value = toLocalInput(new Date(c.ss.anchor));
+          if ($('ss-dur')) $('ss-dur').value = c.ss.dur != null ? c.ss.dur : '';
           setMode('ss');
         } else {
           setMode('full');
@@ -5808,7 +6013,10 @@ table.data tr.assumed td { background: #fffbeb; }
       var ar = M.drug().adminRoutes;
       if (ar) {
         var rv = $('dose-route').value;
-        route = (rv === 'iv' || rv === 'sc') ? rv : (state.doses.length === 0 ? ar.first : ar.subsequent);
+        route = resolveDoseRoute(M.drug(), rv, state.doses.length);
+        // v0.45.0 (review U1): only the loading dose is IV; a later dose explicitly set to IV is almost always a slip
+        if (rv === 'iv' && state.doses.length > 0 && ar.subsequent === 'sc' &&
+          !confirm('Crovalimab is given IV only for the first (loading) dose; later doses are SC.\n\nAdd this dose as IV anyway?')) return;
       }
       /* Custom infusion times (2026-09-14, author-approved plan). SC has no
        * infusion-duration concept at all (M.simulate() never reads .dur for
@@ -5831,7 +6039,7 @@ table.data tr.assumed td { background: #fffbeb; }
       // Duplicate guard: two clicks on "Add dose" silently doubled the amount
       // v0.41.0: 24 h, not 5 min -- a dose entered twice by two people an hour
       // apart doubled the exposure in the fit without a question.
-      var dup = state.doses.some(function (d) { return Math.abs(d.t - t) < 24 * 3600000; });
+      var dup = isDuplicateDose(state.doses, t, route);   // v0.45.0: same route only (review U4)
       if (dup && !confirm('A dose is already recorded within 24 hours of that time.\n\nIs this really a second, separate dose?')) return;
       var doseObj = { t: t, amt: amt, route: route };
       if (durMin != null) doseObj.dur = minutesToDur(durMin);
@@ -6017,16 +6225,26 @@ table.data tr.assumed td { background: #fffbeb; }
     };
   }
 
-  function applySession(s) {
-    state.patient = s.patient || state.patient;
-    state.drug = M.drugs[s.drug] ? s.drug : state.drug;
-    state.lloq = s.lloq != null ? s.lloq : null;
-    state.errMult = s.errMult || 1;
-    /* absent in sessions saved before v0.20.0 — default, never undefined */
-    state.recency = RECENCY_PRESETS.indexOf(s.recency) >= 0 ? s.recency : 'off';
-    state.doses = (s.doses || []).slice();
-    state.obs = (s.obs || []).slice();
-    state.report = s.report || { preparedBy: '', advice: '' };
+  function applySession(raw) {
+    /* v0.44.0 (review H1/H2): the autosave goes through the same gate as an
+     * imported file. A dose time that was NaN when saved is stored as null and
+     * would otherwise hang the first forecast after "Restore". */
+    var s;
+    try { s = cleanSession(raw); }
+    catch (e) {
+      clearSession();
+      alert('The autosaved session could not be restored (' + e.message + ') and was discarded.');
+      return;
+    }
+    state.patient = s.patient;
+    state.drug = s.drug;
+    state.lloq = s.lloq;
+    state.errMult = s.errMult;
+    /* absent in sessions saved before v0.20.0 — cleanSession defaults it, never undefined */
+    state.recency = s.recency;
+    state.doses = s.doses.slice();
+    state.obs = s.obs.slice();
+    state.report = s.report;
     state.fit = null;
     M.select(state.drug);
     var sel = $('pt-drug'); if (sel) sel.value = state.drug;
@@ -6039,7 +6257,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * autosave restore, while the JSON-import path, which already had this
      * order, kept it. */
     applyDrugUI();
-    state.target = s.target || { value: null };
+    state.target = s.target;
     if (!(state.target.value > 0)) state.target.value = null;
     /* v0.40.0: the form must hold the restored values BEFORE setMode() below.
      * setMode() -> markStale() -> updateRunReady() -> readPatient() reads the
@@ -6048,7 +6266,7 @@ table.data tr.assumed td { background: #fffbeb; }
      * blank, a custom target and the assay multiplier reset to defaults, and
      * markStale()'s autosave then overwrote the good saved copy. */
     setPlanFields(s.plan);
-    setPrior(s.priorTx || null);
+    setPrior(s.priorTx);
     syncInputs();
     /* Steady-state mode's own fields were never restored here at all --
      * mirrors importJson()'s own restoration of the same ss:{dose,interval,
@@ -6058,12 +6276,12 @@ table.data tr.assumed td { background: #fffbeb; }
      * called for BOTH branches, never left implicit -- otherwise a restored
      * ss regimen would sit in the ss-* fields while the page silently stayed
      * on whatever mode the UI happened to already be showing. */
-    var restoredMode = s.mode === 'ss' ? 'ss' : 'full';
-    if (restoredMode === 'ss' && s.ss && isFinite(Date.parse(s.ss.anchor))) {
+    var restoredMode = s.mode;
+    if (restoredMode === 'ss' && s.ss) {
       $('ss-dose').value = s.ss.dose != null ? s.ss.dose : 900;
       $('ss-interval').value = s.ss.interval != null ? s.ss.interval : 14;
-      $('ss-anchor').value = toLocalInput(new Date(Date.parse(s.ss.anchor)));
-      if ($('ss-dur')) $('ss-dur').value = (s.ss.dur != null && isFinite(s.ss.dur)) ? s.ss.dur : '';
+      $('ss-anchor').value = toLocalInput(new Date(s.ss.anchor));
+      if ($('ss-dur')) $('ss-dur').value = s.ss.dur != null ? s.ss.dur : '';
       setMode('ss');
     } else {
       setMode('full');
@@ -6156,8 +6374,16 @@ table.data tr.assumed td { background: #fffbeb; }
     var lastAmt = state.fit.planned ? state.fit.planned.amt : rel.dosesRel[rel.dosesRel.length - 1].amt;
     var amtEl = $('iv-amt'), ivEl = $('iv-interval');
     if (amtEl) amtEl.value = lastAmt;
-    if (ivEl) ivEl.value = fmtDays(state.fit.interval);
-    $('iv-out').innerHTML = '<div class="note">Press “Explore” to see what this patient’s fitted parameters predict for other doses or intervals.</div>';
+    /* v0.45.0 (review S1): an interval the history does not state unambiguously
+     * (loading just ended, or the last two spacings disagree) is not prefilled. */
+    var trusted = state.fit.intervalTrusted !== false;
+    if (ivEl) {
+      ivEl.value = trusted ? fmtDays(state.fit.interval) : '';
+      ivEl.placeholder = trusted ? '' : 'enter the interval';
+    }
+    $('iv-out').innerHTML = trusted
+      ? '<div class="note">Press “Explore” to see what this patient’s fitted parameters predict for other doses or intervals.</div>'
+      : '<div class="note warn">The dosing interval could not be taken from the entered history (the loading phase has only just ended, or the last two intervals differ). Enter the interval to evaluate, then press “Explore”.</div>';
   }
 
   async function runIntervalScan() {
@@ -6174,7 +6400,10 @@ table.data tr.assumed td { background: #fffbeb; }
       return;
     }
     var iv = parseFloat($('iv-interval').value);
-    if (!(iv > 0)) { iv = fit.interval; $('iv-interval').value = fmtDays(iv); }
+    if (!(iv > 0)) {
+      if (fit.intervalTrusted === false) { alert('Enter the dosing interval (days) to evaluate. It could not be taken from the entered history.'); return; }
+      iv = fit.interval; $('iv-interval').value = fmtDays(iv);
+    }
     if (iv > 365) { alert('Interval must be 365 days or less.'); return; }
 
     var btn = $('iv-run');
@@ -6657,6 +6886,10 @@ table.data tr.assumed td { background: #fffbeb; }
         out.push('The trough target is not predicted to be reached with ≥ 90% probability at one or more upcoming doses.');
       }
     }
+    if ((fit.loadingPhase || fit.spacingUnsettled) && !fit.planned) {
+      out.push('No next-dose trough is assumed: ' + (fit.loadingPhase ? 'the loading regimen is not finished' : 'the last two dosing intervals differ') +
+        ', so the next interval could not be taken from the entered history. A planned regimen would be needed to show one.');
+    }
     if (st.obs.length && !st.obs.some(function (o) { return !o.lloq; })) {
       out.push('All measurements are below the LLOQ. Individualization relies entirely on censored (M3) information and is less certain.');
     }
@@ -6939,6 +7172,13 @@ table.data tr.assumed td { background: #fffbeb; }
   ECU.reportHtml = reportHtml;
   ECU.findingsLines = findingsLines;
   ECU.ptaBadge = ptaBadge;
+  ECU.parseErrMult = parseErrMult;           // testability (v0.46.0)
+  ECU.ageReason = ageReason;                 // testability (v0.46.0)
+  ECU.effectiveAge = effectiveAge;           // testability (v0.46.0)
+  ECU.resolveDoseRoute = resolveDoseRoute;   // testability (v0.45.0)
+  ECU.isDuplicateDose = isDuplicateDose;     // testability (v0.45.0)
+  ECU.esc = esc;                      // testability (v0.44.0): quote-safe escaping
+  ECU.cleanSession = cleanSession;    // testability (v0.44.0): the session-import gate
   ECU.halfLifeInfo = halfLifeInfo;   // testability (v0.43.0)   // testability (F3/F11, v0.23.0): pure string builder, no DOM
   // testability (custom infusion times, 2026-09-14): pure unit-conversion/
   // formatting functions, no DOM
